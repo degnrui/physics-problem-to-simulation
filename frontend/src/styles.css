@@ -108,6 +108,20 @@ input {
   margin-bottom: 18px;
 }
 
+.toolbar-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.debug-toggle {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  color: #475569;
+  font-weight: 600;
+}
+
 .stage-toolbar h2,
 .control-section h2,
 .control-section h3 {
@@ -246,6 +260,33 @@ input {
   display: block;
 }
 
+.uploaded-preview {
+  width: 100%;
+  display: block;
+  border-radius: 12px;
+}
+
+.recognition-review {
+  border-radius: 16px;
+  background: #fff7ed;
+  border: 1px solid rgba(234, 88, 12, 0.25);
+  padding: 14px;
+}
+
+.recognition-review p {
+  margin: 0 0 8px;
+  color: #7c2d12;
+}
+
+.recognition-review button {
+  border: none;
+  border-radius: 12px;
+  padding: 10px 14px;
+  background: #ea580c;
+  color: white;
+  cursor: pointer;
+}
+
 .debug-panel {
   border-top: 1px solid #e2e8f0;
   padding-top: 14px;
@@ -255,6 +296,11 @@ input {
   cursor: pointer;
   color: #475569;
   font-weight: 700;
+}
+
+.debug-label {
+  font-size: 11px;
+  fill: #0284c7;
 }
 
 .debug-panel pre {
@@ -298,5 +344,10 @@ input {
 
   .stage-toolbar {
     flex-direction: column;
+  }
+
+  .toolbar-actions {
+    width: 100%;
+    justify-content: space-between;
   }
 }

@@ -1,3 +1,9 @@
+export type PortSpec = {
+  id: string;
+  x: number;
+  y: number;
+};
+
 export type Figure1SceneComponent = {
   id: string;
   type: string;
@@ -15,6 +21,15 @@ export type Figure1SceneComponent = {
     removable: boolean;
     slider_range?: { min_ratio: number; max_ratio: number } | null;
   };
+  ports: PortSpec[];
+};
+
+export type SceneWire = {
+  id: string;
+  role: string;
+  start_ref: string;
+  end_ref: string;
+  bends: Array<{ x: number; y: number }>;
 };
 
 export type Figure1Scene = {
@@ -22,8 +37,9 @@ export type Figure1Scene = {
   title: string;
   canvas: { width: number; height: number };
   components: Figure1SceneComponent[];
-  wires: Array<{ id: string; role: string; points: Array<{ x: number; y: number }> }>;
+  wires: SceneWire[];
   meter_anchors: Array<{ component_id: string; x: number; y: number }>;
+  debug?: Record<string, string>;
 };
 
 export type Figure1State = {
@@ -56,8 +72,26 @@ export type Figure1Simulation = {
   physics: Record<string, unknown>;
 };
 
+export type ImagePreview =
+  | { id: string; svg: string; data_url?: never }
+  | { id: string; data_url: string; svg?: never };
+
+export type RecognitionPayload = {
+  reference_image: ImagePreview;
+  scene: Figure1Scene;
+  state: Figure1State;
+  simulation: Figure1Simulation;
+  detections: {
+    circles: Array<Record<string, number>>;
+    rectangles: Array<Record<string, number>>;
+    vertical_lines: Array<Record<string, number>>;
+    confidence: number;
+  };
+  needs_confirmation: boolean;
+};
+
 export type Figure1Payload = {
-  reference_image: { id: string; svg: string };
+  reference_image: ImagePreview;
   scene: Figure1Scene;
   state: Figure1State;
   simulation: Figure1Simulation;
@@ -99,5 +133,18 @@ export async function applyFigure1Edit(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ scene, state, edit })
   });
+  return response.json();
+}
+
+export async function recognizeCircuitImage(file: File): Promise<RecognitionPayload> {
+  const formData = new FormData();
+  formData.append("file", file);
+  const response = await fetch(`${API_ROOT}/recognize`, {
+    method: "POST",
+    body: formData
+  });
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
   return response.json();
 }

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import copy
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 from backend.app.schemas.scene import SceneDocument
 
@@ -19,6 +19,38 @@ DEFAULT_STATE = {
 }
 
 
+def _component_map(scene: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    return {component["id"]: component for component in scene["components"]}
+
+
+def _port_lookup(scene: Dict[str, Any]) -> Dict[str, Dict[str, float]]:
+    lookup: Dict[str, Dict[str, float]] = {}
+    for component in scene["components"]:
+        if component["type"] == "junction":
+            lookup[component["id"]] = {"x": component["x"], "y": component["y"]}
+        for port in component.get("ports", []):
+            lookup[f"{component['id']}.{port['id']}"] = {"x": port["x"], "y": port["y"]}
+    return lookup
+
+
+def resolve_wire_points(scene: Dict[str, Any], wire: Dict[str, Any]) -> List[Dict[str, float]]:
+    lookup = _port_lookup(scene)
+    points = [lookup[wire["start_ref"]], *wire.get("bends", []), lookup[wire["end_ref"]]]
+    return [{"x": float(point["x"]), "y": float(point["y"])} for point in points]
+
+
+def validate_figure1_geometry(scene: Dict[str, Any]) -> List[str]:
+    validated_scene = SceneDocument.model_validate(scene).model_dump()
+    lookup = _port_lookup(validated_scene)
+    issues: List[str] = []
+    for wire in validated_scene["wires"]:
+        if wire["start_ref"] not in lookup:
+            issues.append(f"Missing start_ref for {wire['id']}: {wire['start_ref']}")
+        if wire["end_ref"] not in lookup:
+            issues.append(f"Missing end_ref for {wire['id']}: {wire['end_ref']}")
+    return issues
+
+
 def _base_scene() -> Dict[str, Any]:
     return {
         "id": "figure-1",
@@ -29,23 +61,34 @@ def _base_scene() -> Dict[str, Any]:
                 "id": "switch",
                 "type": "switch",
                 "label": "S",
-                "x": 60,
-                "y": 180,
-                "width": 70,
-                "height": 180,
+                "x": 38,
+                "y": 252,
+                "width": 110,
+                "height": 250,
                 "capabilities": {"toggleable": True},
                 "style": {"stroke": "#111827"},
+                "ports": [
+                    {"id": "top", "x": 92, "y": 266},
+                    {"id": "bottom", "x": 92, "y": 637},
+                    {"id": "pivot", "x": 92, "y": 360},
+                    {"id": "open_contact", "x": 36, "y": 470},
+                    {"id": "closed_contact", "x": 92, "y": 470},
+                ],
             },
             {
                 "id": "battery",
                 "type": "battery",
                 "label": "E",
                 "x": 145,
-                "y": 615,
+                "y": 580,
                 "width": 120,
-                "height": 62,
+                "height": 115,
                 "value": 6.0,
                 "capabilities": {"editable_value": True},
+                "ports": [
+                    {"id": "left", "x": 92, "y": 637},
+                    {"id": "right", "x": 390, "y": 637},
+                ],
             },
             {
                 "id": "resistor",
@@ -57,6 +100,10 @@ def _base_scene() -> Dict[str, Any]:
                 "height": 48,
                 "value": 10.0,
                 "capabilities": {"editable_value": True},
+                "ports": [
+                    {"id": "left", "x": 430, "y": 266},
+                    {"id": "right", "x": 580, "y": 266},
+                ],
             },
             {
                 "id": "rheostat",
@@ -71,6 +118,11 @@ def _base_scene() -> Dict[str, Any]:
                     "editable_value": True,
                     "slider_range": {"min_ratio": 0.0, "max_ratio": 1.0},
                 },
+                "ports": [
+                    {"id": "left", "x": 390, "y": 637},
+                    {"id": "right", "x": 560, "y": 637},
+                    {"id": "slider_contact", "x": 474, "y": 618},
+                ],
             },
             {
                 "id": "ammeter",
@@ -81,6 +133,10 @@ def _base_scene() -> Dict[str, Any]:
                 "width": 90,
                 "height": 90,
                 "capabilities": {"removable": True},
+                "ports": [
+                    {"id": "top", "x": 740, "y": 420},
+                    {"id": "bottom", "x": 740, "y": 510},
+                ],
             },
             {
                 "id": "voltmeter",
@@ -91,79 +147,103 @@ def _base_scene() -> Dict[str, Any]:
                 "width": 112,
                 "height": 112,
                 "capabilities": {"removable": True},
+                "ports": [
+                    {"id": "left", "x": 500, "y": 140},
+                    {"id": "right", "x": 612, "y": 140},
+                ],
             },
-            {
-                "id": "junction_left",
-                "type": "junction",
-                "x": 402,
-                "y": 266,
-                "width": 18,
-                "height": 18,
-            },
-            {
-                "id": "junction_right",
-                "type": "junction",
-                "x": 642,
-                "y": 266,
-                "width": 18,
-                "height": 18,
-            },
-            {
-                "id": "junction_bottom",
-                "type": "junction",
-                "x": 592,
-                "y": 637,
-                "width": 18,
-                "height": 18,
-            },
+            {"id": "junction_left", "type": "junction", "x": 430, "y": 266, "width": 18, "height": 18},
+            {"id": "junction_right", "type": "junction", "x": 580, "y": 266, "width": 18, "height": 18},
+            {"id": "junction_bottom", "type": "junction", "x": 560, "y": 637, "width": 18, "height": 18},
+            {"id": "ammeter_top_node", "type": "junction", "x": 740, "y": 266, "width": 18, "height": 18},
+            {"id": "ammeter_bottom_node", "type": "junction", "x": 740, "y": 637, "width": 18, "height": 18},
+            {"id": "slider_tip", "type": "junction", "x": 474, "y": 540, "width": 18, "height": 18},
         ],
         "wires": [
             {
                 "id": "main-left-top",
                 "role": "main",
-                "points": [{"x": 126, "y": 266}, {"x": 402, "y": 266}],
+                "start_ref": "switch.top",
+                "end_ref": "junction_left",
+                "bends": [],
             },
             {
-                "id": "main-right-vertical",
+                "id": "resistor-right-link",
                 "role": "main",
-                "points": [{"x": 652, "y": 266}, {"x": 738, "y": 266}, {"x": 738, "y": 635}],
+                "start_ref": "resistor.right",
+                "end_ref": "junction_right",
+                "bends": [],
+            },
+            {
+                "id": "main-right-top",
+                "role": "main",
+                "start_ref": "junction_right",
+                "end_ref": "ammeter_top_node",
+                "bends": [],
+            },
+            {
+                "id": "ammeter-upper",
+                "role": "main",
+                "start_ref": "ammeter_top_node",
+                "end_ref": "ammeter.top",
+                "bends": [],
+            },
+            {
+                "id": "ammeter-lower",
+                "role": "main",
+                "start_ref": "ammeter.bottom",
+                "end_ref": "ammeter_bottom_node",
+                "bends": [],
+            },
+            {
+                "id": "main-right-bottom",
+                "role": "main",
+                "start_ref": "ammeter_bottom_node",
+                "end_ref": "junction_bottom",
+                "bends": [{"x": 740, "y": 637}],
             },
             {
                 "id": "main-bottom",
                 "role": "main",
-                "points": [{"x": 592, "y": 637}, {"x": 266, "y": 637}],
+                "start_ref": "junction_bottom",
+                "end_ref": "battery.right",
+                "bends": [{"x": 390, "y": 637}],
             },
             {
                 "id": "main-left-bottom",
                 "role": "main",
-                "points": [{"x": 145, "y": 637}, {"x": 92, "y": 637}, {"x": 92, "y": 360}],
+                "start_ref": "battery.left",
+                "end_ref": "switch.bottom",
+                "bends": [],
             },
             {
                 "id": "voltmeter-branch",
                 "role": "meter",
-                "points": [{"x": 402, "y": 266}, {"x": 402, "y": 138}, {"x": 500, "y": 138}],
+                "start_ref": "junction_left",
+                "end_ref": "voltmeter.left",
+                "bends": [{"x": 430, "y": 140}],
             },
             {
                 "id": "voltmeter-return",
                 "role": "meter",
-                "points": [{"x": 612, "y": 138}, {"x": 642, "y": 138}, {"x": 642, "y": 266}],
+                "start_ref": "voltmeter.right",
+                "end_ref": "junction_right",
+                "bends": [{"x": 580, "y": 140}],
             },
             {
-                "id": "rheostat-pointer",
+                "id": "slider-branch",
                 "role": "pointer",
-                "points": [{"x": 474, "y": 540}, {"x": 474, "y": 618}],
+                "start_ref": "rheostat.slider_contact",
+                "end_ref": "slider_tip",
+                "bends": [],
             },
         ],
         "meter_anchors": [
             {"component_id": "ammeter", "x": 740, "y": 466},
             {"component_id": "voltmeter", "x": 556, "y": 140},
         ],
-        "debug": {"status": "template"},
+        "debug": {"status": "template", "overlay": "ports"},
     }
-
-
-def _component_map(scene: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
-    return {component["id"]: component for component in scene["components"]}
 
 
 def build_figure1_scene() -> Dict[str, Any]:
@@ -256,13 +336,16 @@ def simulate_figure1_scene(scene: Dict[str, Any], state: Dict[str, Any]) -> Dict
     rheostat_voltage = total_current * rheostat_effective if switch_closed else 0.0
 
     return {
-        "physics": compile_figure1_to_physics(validated_scene, {
-            "switch_closed": switch_closed,
-            "battery_voltage": battery_voltage,
-            "resistor_value": resistor_value,
-            "rheostat_total": rheostat_total,
-            "rheostat_ratio": rheostat_ratio,
-        }),
+        "physics": compile_figure1_to_physics(
+            validated_scene,
+            {
+                "switch_closed": switch_closed,
+                "battery_voltage": battery_voltage,
+                "resistor_value": resistor_value,
+                "rheostat_total": rheostat_total,
+                "rheostat_ratio": rheostat_ratio,
+            },
+        ),
         "meter_results": {
             "ammeter": round(total_current, 4),
             "voltmeter": round(resistor_voltage, 4),

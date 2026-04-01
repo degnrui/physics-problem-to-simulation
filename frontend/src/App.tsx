@@ -1,18 +1,27 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Figure1Payload,
   Figure1Scene,
   Figure1SceneComponent,
-  Figure1State,
   Figure1Simulation,
+  Figure1State,
+  ImagePreview,
+  RecognitionPayload,
+  SceneWire,
   applyFigure1Edit,
   fetchFigure1Scene,
   fetchSamples,
+  recognizeCircuitImage,
   simulateFigure1
 } from "./lib/api";
 
 function sliderHandleX(rheostat: Figure1SceneComponent, ratio: number) {
-  return rheostat.x + rheostat.width * ratio;
+  const left = rheostat.ports.find((port) => port.id === "left");
+  const right = rheostat.ports.find((port) => port.id === "right");
+  if (!left || !right) {
+    return rheostat.x + rheostat.width * ratio;
+  }
+  return left.x + (right.x - left.x) * ratio;
 }
 
 function meterAngle(value: number, maxValue: number) {
@@ -24,10 +33,44 @@ function rotatePointer(cx: number, cy: number, angle: number) {
   return `rotate(${angle} ${cx} ${cy})`;
 }
 
+function buildPortMap(scene: Figure1Scene) {
+  const map = new Map<string, { x: number; y: number }>();
+  scene.components.forEach((component) => {
+    if (component.type === "junction") {
+      map.set(component.id, { x: component.x, y: component.y });
+    }
+    component.ports.forEach((port) => {
+      map.set(`${component.id}.${port.id}`, { x: port.x, y: port.y });
+    });
+  });
+  return map;
+}
+
+function resolveWirePoints(scene: Figure1Scene, wire: SceneWire) {
+  const portMap = buildPortMap(scene);
+  return [portMap.get(wire.start_ref), ...wire.bends, portMap.get(wire.end_ref)].filter(
+    Boolean
+  ) as Array<{ x: number; y: number }>;
+}
+
+function renderImagePreview(preview: ImagePreview) {
+  if ("svg" in preview && preview.svg) {
+    return (
+      <div className="reference-preview" dangerouslySetInnerHTML={{ __html: preview.svg }} />
+    );
+  }
+  return (
+    <div className="reference-preview">
+      <img src={preview.data_url} alt="识别输入" className="uploaded-preview" />
+    </div>
+  );
+}
+
 type StageProps = {
   scene: Figure1Scene;
   state: Figure1State;
   simulation: Figure1Simulation;
+  showDebugOverlay: boolean;
   onToggleSwitch: () => void;
   onSliderPointerDown: () => void;
 };
@@ -36,6 +79,7 @@ function CircuitStage({
   scene,
   state,
   simulation,
+  showDebugOverlay,
   onToggleSwitch,
   onSliderPointerDown
 }: StageProps) {
@@ -49,6 +93,11 @@ function CircuitStage({
   const voltmeter = componentMap.voltmeter;
   const ammeterValue = simulation.meter_results.ammeter;
   const voltmeterValue = simulation.meter_results.voltmeter;
+  const visibleJunctions = scene.components.filter(
+    (component) =>
+      component.type === "junction" &&
+      !["slider_tip", "ammeter_top_node", "ammeter_bottom_node"].includes(component.id)
+  );
 
   return (
     <svg
@@ -59,31 +108,30 @@ function CircuitStage({
     >
       <rect width={scene.canvas.width} height={scene.canvas.height} fill="#fffef9" rx="30" />
 
-      {scene.wires
-        .filter((wire) => wire.role !== "pointer")
-        .map((wire) => (
+      {scene.wires.map((wire) => {
+        const points = resolveWirePoints(scene, wire);
+        return (
           <polyline
             key={wire.id}
-            points={wire.points.map((point) => `${point.x},${point.y}`).join(" ")}
+            points={points.map((point) => `${point.x},${point.y}`).join(" ")}
             fill="none"
             stroke={highlighted.has(wire.id) ? "#f97316" : "#111827"}
             strokeWidth={highlighted.has(wire.id) ? 8 : 6}
             strokeLinejoin="round"
             strokeLinecap="round"
           />
-        ))}
+        );
+      })}
 
-      {scene.components
-        .filter((component) => component.type === "junction")
-        .map((component) => (
-          <circle
-            key={component.id}
-            cx={component.x}
-            cy={component.y}
-            r={11}
-            fill={simulation.visual_state.energized ? "#f97316" : "#111827"}
-          />
-        ))}
+      {visibleJunctions.map((component) => (
+        <circle
+          key={component.id}
+          cx={component.x}
+          cy={component.y}
+          r={11}
+          fill={simulation.visual_state.energized ? "#f97316" : "#111827"}
+        />
+      ))}
 
       <g
         className="switch-hitbox"
@@ -103,7 +151,7 @@ function CircuitStage({
           x1="92"
           y1="347"
           x2={state.switch_closed ? 92 : 32}
-          y2={state.switch_closed ? 470 : 470}
+          y2={470}
           stroke={state.switch_closed ? "#f97316" : "#111827"}
           strokeWidth="6"
           strokeLinecap="round"
@@ -125,7 +173,7 @@ function CircuitStage({
           stroke="#111827"
           strokeWidth="6"
         />
-        <text x="505" y="396" className="stage-label stage-label-resistor">
+        <text x={componentMap.resistor.x + 75} y={396} className="stage-label stage-label-resistor">
           R
         </text>
       </g>
@@ -142,7 +190,7 @@ function CircuitStage({
         />
         <line
           x1={sliderX}
-          y1="540"
+          y1={540}
           x2={sliderX}
           y2={rheostat.y}
           stroke="#111827"
@@ -165,12 +213,12 @@ function CircuitStage({
           strokeWidth="4"
           onPointerDown={onSliderPointerDown}
         />
-        <text x="364" y="598" className="stage-label stage-label-rheostat">
+        <text x={rheostat.x - 26} y={598} className="stage-label stage-label-rheostat">
           P
         </text>
       </g>
 
-      {componentMap.voltmeter.enabled ? (
+      {voltmeter.enabled ? (
         <g>
           <circle
             cx={voltmeter.x + voltmeter.width / 2}
@@ -193,16 +241,16 @@ function CircuitStage({
               meterAngle(voltmeterValue, state.battery_voltage || 1)
             )}
           />
-          <text x="528" y="158" className="stage-meter-symbol">
+          <text x={voltmeter.x + 28} y={voltmeter.y + 74} className="stage-meter-symbol">
             V
           </text>
-          <text x="522" y="214" className="stage-meter-value">
+          <text x={voltmeter.x + 8} y={voltmeter.y + 130} className="stage-meter-value">
             {voltmeterValue.toFixed(2)} V
           </text>
         </g>
       ) : null}
 
-      {componentMap.ammeter.enabled ? (
+      {ammeter.enabled ? (
         <g>
           <circle
             cx={ammeter.x + ammeter.width / 2}
@@ -225,14 +273,27 @@ function CircuitStage({
               meterAngle(ammeterValue, 1)
             )}
           />
-          <text x="719" y="484" className="stage-meter-symbol">
+          <text x={ammeter.x + 20} y={ammeter.y + 64} className="stage-meter-symbol">
             A
           </text>
-          <text x="702" y="536" className="stage-meter-value">
+          <text x={ammeter.x + 4} y={ammeter.y + 116} className="stage-meter-value">
             {ammeterValue.toFixed(2)} A
           </text>
         </g>
       ) : null}
+
+      {showDebugOverlay
+        ? scene.components.flatMap((component) =>
+            component.ports.map((port) => (
+              <g key={`${component.id}-${port.id}`}>
+                <circle cx={port.x} cy={port.y} r={6} fill="#0ea5e9" />
+                <text x={port.x + 8} y={port.y - 8} className="debug-label">
+                  {component.id}.{port.id}
+                </text>
+              </g>
+            ))
+          )
+        : null}
     </svg>
   );
 }
@@ -243,8 +304,10 @@ export function App() {
   const [scene, setScene] = useState<Figure1Scene | null>(null);
   const [state, setState] = useState<Figure1State | null>(null);
   const [simulation, setSimulation] = useState<Figure1Simulation | null>(null);
+  const [pendingRecognition, setPendingRecognition] = useState<RecognitionPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [isDragging, setIsDragging] = useState(false);
+  const [showDebugOverlay, setShowDebugOverlay] = useState(false);
   const [error, setError] = useState<string>("");
   const stageWrapRef = useRef<HTMLDivElement | null>(null);
 
@@ -264,7 +327,7 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    if (!scene || !state) {
+    if (!scene || !state || pendingRecognition) {
       return;
     }
     const handle = window.setTimeout(() => {
@@ -273,7 +336,7 @@ export function App() {
         .catch((reason) => setError(String(reason)));
     }, isDragging ? 30 : 120);
     return () => window.clearTimeout(handle);
-  }, [scene, state, isDragging]);
+  }, [scene, state, isDragging, pendingRecognition]);
 
   useEffect(() => {
     if (!isDragging || !scene) {
@@ -319,22 +382,53 @@ export function App() {
     setSimulation(result.simulation);
   };
 
+  const onUpload = async (file: File | null) => {
+    if (!file) {
+      return;
+    }
+    setError("");
+    try {
+      const result = await recognizeCircuitImage(file);
+      setPendingRecognition(result);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  };
+
+  const applyRecognition = () => {
+    if (!pendingRecognition) {
+      return;
+    }
+    setPayload({
+      reference_image: pendingRecognition.reference_image,
+      scene: pendingRecognition.scene,
+      state: pendingRecognition.state,
+      simulation: pendingRecognition.simulation
+    });
+    setScene(pendingRecognition.scene);
+    setState(pendingRecognition.state);
+    setSimulation(pendingRecognition.simulation);
+    setPendingRecognition(null);
+  };
+
+  const currentPreview = pendingRecognition?.reference_image ?? payload?.reference_image;
+  const removableComponents = useMemo(
+    () => (scene ? scene.components.filter((component) => component.capabilities.removable) : []),
+    [scene]
+  );
+
   if (loading || !scene || !state || !simulation || !payload) {
     return <main className="loading-shell">正在加载图 1 simulation...</main>;
   }
-
-  const removableComponents = scene.components.filter(
-    (component) => component.capabilities.removable
-  );
 
   return (
     <main className="sim-app">
       <header className="sim-hero">
         <div>
           <p className="sim-kicker">Figure 1 Simulation</p>
-          <h1>图 1 复刻式交互电路</h1>
+          <h1>图 1 修正版 + 干净电路图识别入口</h1>
           <p className="sim-description">
-            点击开关、拖动滑片、修改电源与电阻参数，电流表和电压表会在图上实时显示数值。
+            图 1 现在使用端口驱动连线；你也可以上传一张干净规整的教材电路图，先识别再进入 simulation。
           </p>
         </div>
         <div className="sample-summary">
@@ -354,17 +448,32 @@ export function App() {
           <div className="stage-toolbar">
             <div>
               <h2>电路舞台</h2>
-              <p>布局按照图 1 复刻，主交互直接发生在电路图上。</p>
+              <p>导线端点由元件端口驱动，可切换调试叠加层检查是否闭合。</p>
             </div>
-            <button onClick={() => setState((current) => current && { ...current, switch_closed: !current.switch_closed })}>
-              {state.switch_closed ? "断开开关" : "闭合开关"}
-            </button>
+            <div className="toolbar-actions">
+              <label className="debug-toggle">
+                <input
+                  type="checkbox"
+                  checked={showDebugOverlay}
+                  onChange={(event) => setShowDebugOverlay(event.target.checked)}
+                />
+                显示端口
+              </label>
+              <button
+                onClick={() =>
+                  setState((current) => current && { ...current, switch_closed: !current.switch_closed })
+                }
+              >
+                {state.switch_closed ? "断开开关" : "闭合开关"}
+              </button>
+            </div>
           </div>
           <div className="stage-wrap" ref={stageWrapRef}>
             <CircuitStage
               scene={scene}
               state={state}
               simulation={simulation}
+              showDebugOverlay={showDebugOverlay}
               onToggleSwitch={() =>
                 setState((current) => current && { ...current, switch_closed: !current.switch_closed })
               }
@@ -375,7 +484,32 @@ export function App() {
 
         <aside className="control-card">
           <section className="control-section">
-            <h2>控制面板</h2>
+            <h2>识图上传</h2>
+            <label>
+              上传干净电路图图片
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/jpg"
+                onChange={(event) => onUpload(event.target.files?.[0] ?? null)}
+              />
+            </label>
+            {pendingRecognition ? (
+              <div className="recognition-review">
+                <p>
+                  识别置信度：<strong>{pendingRecognition.detections.confidence.toFixed(2)}</strong>
+                </p>
+                <p>
+                  {pendingRecognition.needs_confirmation
+                    ? "该结果建议先人工确认后再进入 simulation。"
+                    : "识别结果置信度较高，可以直接应用到舞台。"}
+                </p>
+                <button onClick={applyRecognition}>应用识别结果</button>
+              </div>
+            ) : null}
+          </section>
+
+          <section className="control-section">
+            <h3>当前读数</h3>
             <div className="metric-grid">
               <div className="metric">
                 <span>电流表 A</span>
@@ -452,12 +586,16 @@ export function App() {
           </section>
 
           <section className="control-section">
-            <h3>原图参考</h3>
-            <div
-              className="reference-preview"
-              dangerouslySetInnerHTML={{ __html: payload.reference_image.svg }}
-            />
+            <h3>参考 / 上传预览</h3>
+            {currentPreview ? renderImagePreview(currentPreview) : null}
           </section>
+
+          {pendingRecognition ? (
+            <details className="debug-panel" open>
+              <summary>识别草图</summary>
+              <pre>{JSON.stringify(pendingRecognition.detections, null, 2)}</pre>
+            </details>
+          ) : null}
 
           <details className="debug-panel">
             <summary>调试信息</summary>

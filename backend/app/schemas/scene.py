@@ -26,6 +26,10 @@ class Point(BaseModel):
     y: float
 
 
+class PortSpec(Point):
+    id: str
+
+
 class SliderRange(BaseModel):
     min_ratio: float = 0.0
     max_ratio: float = 1.0
@@ -53,12 +57,15 @@ class SceneComponent(BaseModel):
     capabilities: ComponentCapabilities = Field(default_factory=ComponentCapabilities)
     style: Dict[str, str] = Field(default_factory=dict)
     metadata: Dict[str, str] = Field(default_factory=dict)
+    ports: List[PortSpec] = Field(default_factory=list)
 
 
 class WireSegment(BaseModel):
     id: str
-    points: List[Point]
     role: str = "main"
+    start_ref: str
+    end_ref: str
+    bends: List[Point] = Field(default_factory=list)
 
 
 class MeterAnchor(BaseModel):

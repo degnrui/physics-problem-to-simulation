@@ -26,6 +26,7 @@ from backend.app.vision.pipeline import (
     load_sample_image,
     preprocess_image,
 )
+from backend.app.vision.recognition import recognize_clean_circuit
 
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
@@ -115,6 +116,14 @@ def create_app():
         preprocessing = preprocess_image(file_bytes)
         image_id = file.filename.rsplit(".", 1)[0] if file.filename else "uploaded-image"
         return {"image_id": image_id, "preprocessing": preprocessing}
+
+    @app.post("/api/recognize")
+    async def recognize_uploaded_image(file: UploadFile = File(...)):
+        file_bytes = await file.read()
+        try:
+            return recognize_clean_circuit(file_bytes)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.post("/api/detect")
     def detect(payload: dict):

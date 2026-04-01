@@ -409,6 +409,75 @@ class BackendCoreTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 400)
 
+    def test_figure1_scene_geometry_has_no_open_wire_endpoints(self):
+        build_figure1_scene = load_attr(
+            "backend.app.scenes.figure1", "build_figure1_scene"
+        )
+        validate_geometry = load_attr(
+            "backend.app.scenes.figure1", "validate_figure1_geometry"
+        )
+
+        payload = build_figure1_scene()
+        issues = validate_geometry(payload["scene"])
+
+        self.assertEqual(issues, [])
+
+    def test_recognize_clean_circuit_image_returns_scene_and_simulation(self):
+        import cv2
+        import numpy as np
+
+        create_app = load_attr("backend.app.main", "create_app")
+        TestClient = load_attr("fastapi.testclient", "TestClient")
+
+        image = np.full((900, 1200, 3), 255, dtype=np.uint8)
+        stroke = (15, 23, 42)
+
+        cv2.line(image, (180, 260), (620, 260), stroke, 10)
+        cv2.line(image, (915, 260), (1070, 260), stroke, 10)
+        cv2.line(image, (1070, 260), (1070, 780), stroke, 10)
+        cv2.line(image, (1070, 780), (870, 780), stroke, 10)
+        cv2.line(image, (565, 780), (390, 780), stroke, 10)
+        cv2.line(image, (190, 780), (100, 780), stroke, 10)
+        cv2.line(image, (100, 780), (100, 430), stroke, 10)
+
+        cv2.circle(image, (100, 430), 22, stroke, 10)
+        cv2.line(image, (98, 408), (28, 602), stroke, 10)
+        cv2.line(image, (100, 455), (100, 344), stroke, 10)
+
+        cv2.line(image, (205, 720), (205, 835), stroke, 10)
+        cv2.line(image, (245, 690), (245, 855), stroke, 10)
+
+        cv2.rectangle(image, (620, 225), (825, 330), stroke, 10)
+        cv2.rectangle(image, (565, 740), (870, 835), stroke, 10)
+        cv2.line(image, (720, 610), (720, 740), stroke, 10)
+        cv2.line(image, (720, 740), (690, 675), stroke, 10)
+        cv2.circle(image, (720, 650), 24, (255, 128, 0), -1)
+        cv2.circle(image, (720, 650), 24, stroke, 8)
+
+        cv2.line(image, (560, 260), (560, 105), stroke, 10)
+        cv2.line(image, (560, 105), (680, 105), stroke, 10)
+        cv2.line(image, (855, 105), (915, 105), stroke, 10)
+        cv2.line(image, (915, 105), (915, 260), stroke, 10)
+        cv2.circle(image, (767, 105), 88, stroke, 10)
+
+        cv2.circle(image, (1070, 615), 78, stroke, 10)
+
+        success, encoded = cv2.imencode(".png", image)
+        self.assertTrue(success)
+
+        client = TestClient(create_app())
+        response = client.post(
+            "/api/recognize",
+            files={"file": ("clean-circuit.png", encoded.tobytes(), "image/png")},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["scene"]["id"], "recognized-clean-circuit")
+        self.assertIn("simulation", payload)
+        self.assertIn("detections", payload)
+        self.assertGreater(payload["simulation"]["meter_results"]["ammeter"], 0.0)
+
 
 if __name__ == "__main__":
     unittest.main()

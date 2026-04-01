@@ -10,11 +10,13 @@
 - 调节电源电压、固定电阻、滑变总阻值
 - 在图中直接显示电流表与电压表读数
 - 有限支持仪表显隐切换
+- 支持上传“干净规整电路图图片”并自动识别为 scene 草图
+- 识别置信度不足时进入人工确认（`needs_confirmation`）
 - 保留底层 physics 模型，便于后续扩展到图 2
 
 ## 技术栈
 
-- 后端：Python 3.9+, FastAPI, Pydantic, NumPy
+- 后端：Python 3.9+, FastAPI, Pydantic, NumPy, OpenCV
 - 前端：React, TypeScript, Vite
 - 测试：Python `unittest`
 
@@ -60,6 +62,14 @@ npm run build
 - `GET /api/scenes/figure-1`
 - `POST /api/scenes/figure-1/simulate`
 - `POST /api/scenes/figure-1/edit`
+- `POST /api/recognize`
+
+## 识图使用方式
+
+1. 打开前端页面后，在右侧“识图上传”选择一张电路图图片。  
+2. 系统调用 `/api/recognize` 返回 scene 草图、检测结果和初始 simulation。  
+3. 如果 `needs_confirmation=true`，先人工检查识别结果，再点击“应用识别结果”进入舞台。  
+4. 进入舞台后继续像图 1 一样调节参数并观察 A/V 读数。
 
 ## Git 工作流建议
 
@@ -71,4 +81,4 @@ npm run build
 
 - 第一阶段只支持图 1 的模板化复刻式 simulation
 - 图 2 仅做后续扩展预留，本版不实现
-- 本版不承诺“上传任意电路图即可自动复刻”
+- 当前上传识图只保证“干净规整教材图”场景，不保证复杂拍照、阴影、透视畸变
