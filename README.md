@@ -1,14 +1,16 @@
-# 图片电路图到 Simulation MVP
+# 图 1 复刻式交互电路 Simulation
 
-这个项目把“静态电路图图片”转换为“可编辑的物理模型”，再运行一个基础直流电路 simulation。
+这个项目当前的主目标不是通用识图，而是把教材中的图 1 电路复刻成一张可交互、可演示、可调参数的电路 simulation。
 
 ## 当前能力
 
-- 上传或读取样例静态电路图
-- 返回预处理结果和轻量级 detection JSON
-- 将 detection JSON 编译为 physics JSON
-- 对基础直流电路执行稳态分析
-- 在前端工作台中查看图片、编辑拓扑、重新运行 simulation
+- 默认加载图 1 复刻式电路舞台
+- 点击开关切换开路/闭路
+- 拖动滑动变阻器滑片改变有效电阻
+- 调节电源电压、固定电阻、滑变总阻值
+- 在图中直接显示电流表与电压表读数
+- 有限支持仪表显隐切换
+- 保留底层 physics 模型，便于后续扩展到图 2
 
 ## 技术栈
 
@@ -18,9 +20,9 @@
 
 ## 目录结构
 
-- `backend/`: API、视觉处理、抽象层、求解器
-- `frontend/`: 前端工作台
-- `sample_data/`: 样例 SVG 电路图
+- `backend/`: 图 1 场景、API、抽象层、求解器
+- `frontend/`: SVG 电路舞台与控制面板
+- `sample_data/`: 图 1 参考 SVG 与早期样例图
 - `docs/`: 契约与设计文档
 - `tests/`: 后端回归测试
 
@@ -48,21 +50,25 @@ npm run dev
 
 ```bash
 python3 -m unittest tests.test_backend_core -v
+npm run build
 ```
 
 ## API 摘要
 
 - `GET /api/health`
 - `GET /api/samples`
-- `GET /api/samples/{image_id}`
-- `POST /api/upload`
-- `POST /api/detect`
-- `POST /api/compile`
-- `POST /api/simulate`
-- `GET /api/export/{image_id}`
+- `GET /api/scenes/figure-1`
+- `POST /api/scenes/figure-1/simulate`
+- `POST /api/scenes/figure-1/edit`
 
 ## Git 工作流建议
 
 - `main` 保持稳定
 - 新功能使用 `feature/*`
 - 里程碑后打 tag，例如 `v0.1.0-mvp-backbone`
+
+## 当前边界
+
+- 第一阶段只支持图 1 的模板化复刻式 simulation
+- 图 2 仅做后续扩展预留，本版不实现
+- 本版不承诺“上传任意电路图即可自动复刻”

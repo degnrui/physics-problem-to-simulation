@@ -14,6 +14,11 @@ except ImportError:  # pragma: no cover - exercised only when dependency missing
     CORSMiddleware = object  # type: ignore[assignment]
 
 from backend.app.abstraction.compiler import compile_detection_to_physics
+from backend.app.scenes.figure1 import (
+    apply_figure1_edit,
+    build_figure1_scene,
+    simulate_figure1_scene,
+)
 from backend.app.schemas.physics import PhysicsJsonDocument
 from backend.app.simulation.solver import simulate_circuit
 from backend.app.vision.pipeline import (
@@ -49,35 +54,60 @@ def create_app():
     def list_samples():
         return [
             {
-                "id": "series_circuit",
-                "title": "Series resistor circuit",
-                "image_path": "/sample_data/series_circuit.svg",
+                "id": "figure-1",
+                "title": "图 1 复刻式电路 simulation",
+                "status": "ready",
             },
             {
-                "id": "parallel_circuit",
-                "title": "Parallel resistor circuit",
-                "image_path": "/sample_data/parallel_circuit.svg",
+                "id": "figure-2",
+                "title": "图 2 器材布局 simulation",
+                "status": "coming_soon",
             },
         ]
 
-    @app.get("/api/samples/{image_id}")
-    def get_sample(image_id: str):
-        try:
-            image_bytes = load_sample_image(SAMPLE_DIR, image_id)
-            detection = detect_circuit_from_image_id(image_id)
-        except (FileNotFoundError, KeyError) as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
-
-        preprocessing = preprocess_image(image_bytes)
-        physics = compile_detection_to_physics(detection)
-        simulation = simulate_circuit(physics)
+    @app.get("/api/scenes/figure-1")
+    def get_figure1_scene():
+        payload = build_figure1_scene()
+        simulation = simulate_figure1_scene(payload["scene"], payload["state"])
         return {
-            "sample": {"id": image_id, "image_svg": image_bytes.decode("utf-8")},
-            "preprocessing": preprocessing,
-            "detection": detection,
-            "physics": physics,
+            "reference_image": payload["reference_image"],
+            "scene": payload["scene"],
+            "state": payload["state"],
             "simulation": simulation,
         }
+
+    @app.post("/api/scenes/figure-1/simulate")
+    def simulate_figure1(payload: dict):
+        scene = payload.get("scene")
+        state = payload.get("state")
+        if not scene or not state:
+            raise HTTPException(status_code=400, detail="scene and state are required")
+        return simulate_figure1_scene(scene, state)
+
+    @app.post("/api/scenes/figure-1/edit")
+    def edit_figure1(payload: dict):
+        scene = payload.get("scene")
+        edit = payload.get("edit")
+        state = payload.get("state")
+        if not scene or not edit:
+            raise HTTPException(status_code=400, detail="scene and edit are required")
+        try:
+            updated_scene = apply_figure1_edit(scene, edit)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        effective_state = state or build_figure1_scene()["state"]
+        simulation = simulate_figure1_scene(updated_scene, effective_state)
+        return {
+            "scene": updated_scene,
+            "state": effective_state,
+            "simulation": simulation,
+        }
+
+    @app.get("/api/samples/{image_id}")
+    def get_sample(image_id: str):
+        if image_id == "figure-1":
+            return get_figure1_scene()
+        raise HTTPException(status_code=404, detail=f"Unsupported sample: {image_id}")
 
     @app.post("/api/upload")
     async def upload_image(file: UploadFile = File(...)):
@@ -107,6 +137,23 @@ def create_app():
 
     @app.get("/api/export/{image_id}")
     def export_sample(image_id: str):
+        if image_id == "figure-1":
+            payload = build_figure1_scene()
+            simulation = simulate_figure1_scene(payload["scene"], payload["state"])
+            return {
+                "image_id": image_id,
+                "scene": payload["scene"],
+                "state": payload["state"],
+                "simulation": simulation,
+                "pretty": json.dumps(
+                    {
+                        "scene": payload["scene"],
+                        "state": payload["state"],
+                        "simulation": simulation,
+                    },
+                    indent=2,
+                ),
+            }
         detection = detect_circuit_from_image_id(image_id)
         physics = compile_detection_to_physics(detection)
         return {
