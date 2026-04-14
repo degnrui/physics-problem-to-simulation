@@ -1,0 +1,120 @@
+:root {
+  font-family: "IBM Plex Sans", "Helvetica Neue", sans-serif;
+  color: #10233c;
+  background:
+    radial-gradient(circle at top left, rgba(255, 221, 153, 0.45), transparent 28%),
+    linear-gradient(180deg, #f8fbff 0%, #eef5fb 100%);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+.app-shell {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 32px 20px 48px;
+}
+
+.hero {
+  margin-bottom: 24px;
+}
+
+.eyebrow {
+  margin: 0 0 8px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: #6a7b91;
+}
+
+.hero h1 {
+  margin: 0;
+  font-size: 40px;
+}
+
+.subtitle {
+  max-width: 720px;
+  color: #42536b;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.panel {
+  border: 1px solid rgba(16, 35, 60, 0.08);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.85);
+  padding: 18px;
+  box-shadow: 0 16px 40px rgba(30, 50, 80, 0.06);
+}
+
+.panel h2 {
+  margin-top: 0;
+}
+
+textarea,
+button,
+pre {
+  width: 100%;
+}
+
+textarea {
+  margin-bottom: 12px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid #c9d4e0;
+  font: inherit;
+}
+
+button {
+  border: 0;
+  border-radius: 12px;
+  padding: 12px 16px;
+  background: #173d67;
+  color: white;
+  font: inherit;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+pre {
+  margin: 0;
+  padding: 12px;
+  border-radius: 12px;
+  overflow: auto;
+  background: #0f1724;
+  color: #dce8f7;
+}
+
+.placeholder {
+  display: grid;
+  place-items: center;
+  min-height: 160px;
+  border: 2px dashed #b8c9d9;
+  border-radius: 16px;
+  color: #58708b;
+  background: rgba(240, 246, 252, 0.9);
+}
+
+.error {
+  color: #a32626;
+}
+
+@media (max-width: 900px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}
+

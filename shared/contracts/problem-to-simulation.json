@@ -1,0 +1,15 @@
+{
+  "request": {
+    "text": "string",
+    "subject_hint": "high-school-physics",
+    "topic_hint": "dynamic-circuit"
+  },
+  "response": {
+    "problem_summary": "string",
+    "structured_problem": {},
+    "physics_model": {},
+    "scene": {},
+    "warnings": ["string"]
+  }
+}
+

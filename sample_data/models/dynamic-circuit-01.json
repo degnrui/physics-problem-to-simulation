@@ -1,0 +1,13 @@
+{
+  "model_type": "dynamic_circuit",
+  "core_relations": [
+    "I = U / R_total",
+    "Series-parallel equivalent resistance reasoning"
+  ],
+  "variables": ["U", "I", "R_fixed", "R_rheostat"],
+  "reasoning_focus": [
+    "Determine connection structure",
+    "Track how changing resistance affects current and meter readings"
+  ]
+}
+
