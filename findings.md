@@ -11,6 +11,7 @@
 - A direct “problem text -> arbitrary simulation code” path is likely too unstable for a first version.
 - A more robust first architecture is: `problem -> structured model -> simulation scene -> solver/renderer`.
 - A standalone scaffold benefits from separating `backend`, `frontend`, and `shared` contracts before deeper implementation starts.
+- The new repository is now initialized locally on branch `main` with a clean initial commit.
 
 ## Technical Decisions
 | Decision | Rationale |
@@ -19,6 +20,7 @@
 | Separate product scaffold from the existing Figure 1 codebase | Prevents architecture drift and mixed responsibilities |
 | Aim first for a scaffold that can support parser/model/scene modules | Matches the intended long-term pipeline |
 | Keep the first sample centered on a dynamic-circuit problem | Reuses the most grounded domain intuition from the earlier project without copying its code structure directly |
+| Prepare GitHub sync after local initialization | Keeps project bootstrapping independent from external tooling availability |
 
 ## Issues Encountered
 | Issue | Resolution |
@@ -28,11 +30,13 @@
 | The new scaffold could not write nested files until the directory tree existed | Created the directory tree first, then wrote scaffold files |
 | The first commit hit a stale git lock file | Removed `.git/index.lock` and resumed the normal commit flow |
 | Parallel git commands can race on `.git/index.lock` in this environment | Use sequential add/commit operations for repository initialization |
+| `gh` is not installed on this machine | GitHub remote creation/push cannot be completed automatically with GitHub CLI right now |
 
 ## Resources
 - New repository root: `/Users/dengrui/Documents/工作/智能体搭建/physics-problem-to-simulation`
 - Existing project root: `/Users/dengrui/Documents/工作/智能体搭建/真实情境到simulation`
 - Implementation plan: `/Users/dengrui/Documents/工作/智能体搭建/physics-problem-to-simulation/docs/plans/2026-04-14-scaffold-design.md`
+- Initial commit: `a7a8d68 chore: initialize project scaffold`
 
 ## Visual/Browser Findings
 - None yet.
