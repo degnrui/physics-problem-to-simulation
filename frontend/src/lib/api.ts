@@ -15,6 +15,7 @@ export type Figure1SceneComponent = {
   rotation: number;
   enabled: boolean;
   value?: number | null;
+  metadata?: Record<string, string>;
   capabilities: {
     editable_value: boolean;
     toggleable: boolean;
@@ -39,6 +40,9 @@ export type Figure1Scene = {
   components: Figure1SceneComponent[];
   wires: SceneWire[];
   meter_anchors: Array<{ component_id: string; x: number; y: number }>;
+  symbol_layout?: Record<string, unknown>;
+  ports_and_wires?: Record<string, unknown>;
+  circuit_topology?: Record<string, unknown>;
   debug?: Record<string, string>;
 };
 
@@ -77,17 +81,27 @@ export type ImagePreview =
   | { id: string; data_url: string; svg?: never };
 
 export type RecognitionPayload = {
+  session_id: string;
+  created_at: string;
   reference_image: ImagePreview;
   scene: Figure1Scene;
   state: Figure1State;
   simulation: Figure1Simulation;
   detections: {
-    circles: Array<Record<string, number>>;
-    rectangles: Array<Record<string, number>>;
-    vertical_lines: Array<Record<string, number>>;
+    line_segments: number;
+    circles: number;
+    rectangles: number;
     confidence: number;
   };
   needs_confirmation: boolean;
+  confidence_breakdown: {
+    overall: number;
+    symbol_detection: number;
+    topology_reconstruction: number;
+  };
+  topology_warnings: string[];
+  unsupported_symbols: string[];
+  issues: Array<{ id: string; level: "warning" | "error"; message: string; target?: string }>;
 };
 
 export type Figure1Payload = {
@@ -95,6 +109,78 @@ export type Figure1Payload = {
   scene: Figure1Scene;
   state: Figure1State;
   simulation: Figure1Simulation;
+};
+
+export type MechanicsProblemRepresentation = {
+  summary: string;
+  objects: Array<{ id: string; label: string; category: string }>;
+  known_quantities: Array<{ symbol: string; value?: number; unit?: string; text?: string }>;
+  constraints: string[];
+  geometry: string[];
+  assumptions: string[];
+  goals: string[];
+  stages: string[];
+};
+
+export type MechanicsCandidateModel = {
+  id: string;
+  title: string;
+  confidence: number;
+  state_variables: string[];
+  governing_laws: string[];
+  assumptions: Record<string, boolean>;
+  notes: string[];
+};
+
+export type MechanicsSolutionModel = {
+  available: boolean;
+  answer_map: Record<string, string>;
+  laws: string[];
+  steps: Array<{ id: string; prompt: string; law?: string; conclusion?: string; evidence?: string }>;
+};
+
+export type MechanicsConflictItem = {
+  id: string;
+  kind: string;
+  severity: "warning" | "error";
+  message: string;
+  target?: string;
+  expected?: string;
+  actual?: string;
+  recommendation?: string;
+};
+
+export type MechanicsSimulation = {
+  model_id: string;
+  answers: Record<
+    string,
+    {
+      key: string;
+      label: string;
+      value: number;
+      unit: string;
+      display_value: string;
+      expected_value?: string;
+      matches_reference?: boolean | null;
+    }
+  >;
+  stage_results: Record<string, unknown>;
+  summary: Record<string, unknown>;
+};
+
+export type MechanicsRecognitionPayload = {
+  session_id: string;
+  created_at: string;
+  reference_image: ImagePreview;
+  problem_representation: MechanicsProblemRepresentation;
+  candidate_models: MechanicsCandidateModel[];
+  selected_model: MechanicsCandidateModel;
+  solution_model: MechanicsSolutionModel;
+  conflict_items: MechanicsConflictItem[];
+  simulation: MechanicsSimulation;
+  needs_confirmation: boolean;
+  confidence_breakdown: Record<string, number>;
+  issues: Array<{ id: string; level: "warning" | "error"; message: string; target?: string }>;
 };
 
 const API_ROOT = "http://127.0.0.1:8000/api";
@@ -142,6 +228,81 @@ export async function recognizeCircuitImage(file: File): Promise<RecognitionPayl
   const response = await fetch(`${API_ROOT}/recognize`, {
     method: "POST",
     body: formData
+  });
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+  return response.json();
+}
+
+export async function confirmRecognizedScene(
+  sessionId: string,
+  updates: {
+    component_updates?: Array<{ id: string; type?: string; value?: number; enabled?: boolean }>;
+    state_updates?: Array<{ key: string; value: number | boolean }>;
+    connections?: Array<{ component_id: string; terminal: string; node_id: string }>;
+  }
+): Promise<{ session_id: string; scene: Figure1Scene; state: Figure1State; simulation: Figure1Simulation }> {
+  const response = await fetch(`${API_ROOT}/recognize/${sessionId}/confirm`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ updates })
+  });
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+  return response.json();
+}
+
+export async function importSceneBundle(payload: {
+  scene: Figure1Scene;
+  state?: Partial<Figure1State>;
+}): Promise<{ scene: Figure1Scene; state: Figure1State; simulation: Figure1Simulation }> {
+  const response = await fetch(`${API_ROOT}/scenes/import-json`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+  return response.json();
+}
+
+export async function recognizeMechanicsProblem(payload: {
+  problemText: string;
+  solutionText?: string;
+  finalAnswers?: string;
+  imageFile?: File | null;
+}): Promise<MechanicsRecognitionPayload> {
+  const formData = new FormData();
+  formData.append("problem_text", payload.problemText);
+  formData.append("solution_text", payload.solutionText ?? "");
+  formData.append("final_answers", payload.finalAnswers ?? "");
+  if (payload.imageFile) {
+    formData.append("image", payload.imageFile);
+  }
+  const response = await fetch(`${API_ROOT}/mechanics/recognize`, {
+    method: "POST",
+    body: formData
+  });
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+  return response.json();
+}
+
+export async function confirmMechanicsProblem(
+  sessionId: string,
+  updates: {
+    selected_model_id?: string;
+    assumption_overrides?: Record<string, boolean>;
+  }
+): Promise<MechanicsRecognitionPayload> {
+  const response = await fetch(`${API_ROOT}/mechanics/${sessionId}/confirm`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ updates })
   });
   if (!response.ok) {
     throw new Error(await response.text());

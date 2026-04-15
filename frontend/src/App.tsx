@@ -6,16 +6,24 @@ import {
   Figure1Simulation,
   Figure1State,
   ImagePreview,
+  MechanicsRecognitionPayload,
   RecognitionPayload,
   SceneWire,
   applyFigure1Edit,
+  confirmMechanicsProblem,
+  confirmRecognizedScene,
   fetchFigure1Scene,
   fetchSamples,
+  importSceneBundle,
+  recognizeMechanicsProblem,
   recognizeCircuitImage,
   simulateFigure1
 } from "./lib/api";
 
-function sliderHandleX(rheostat: Figure1SceneComponent, ratio: number) {
+function sliderHandleX(rheostat: Figure1SceneComponent | undefined, ratio: number) {
+  if (!rheostat) {
+    return 0;
+  }
   const left = rheostat.ports.find((port) => port.id === "left");
   const right = rheostat.ports.find((port) => port.id === "right");
   if (!left || !right) {
@@ -25,7 +33,7 @@ function sliderHandleX(rheostat: Figure1SceneComponent, ratio: number) {
 }
 
 function meterAngle(value: number, maxValue: number) {
-  const normalized = Math.min(Math.max(value / maxValue, 0), 1);
+  const normalized = Math.min(Math.max(value / Math.max(maxValue, 1e-6), 0), 1);
   return -120 + normalized * 120;
 }
 
@@ -44,6 +52,11 @@ function buildPortMap(scene: Figure1Scene) {
     });
   });
   return map;
+}
+
+function getPort(scene: Figure1Scene, ref: string) {
+  const map = buildPortMap(scene);
+  return map.get(ref);
 }
 
 function resolveWirePoints(scene: Figure1Scene, wire: SceneWire) {
@@ -83,33 +96,44 @@ function CircuitStage({
   onToggleSwitch,
   onSliderPointerDown
 }: StageProps) {
-  const componentMap = Object.fromEntries(
-    scene.components.map((component) => [component.id, component])
-  ) as Record<string, Figure1SceneComponent>;
   const highlighted = new Set(simulation.visual_state.highlighted_wires);
-  const rheostat = componentMap.rheostat;
+  const activeComponents = scene.components.filter((component) => component.enabled !== false);
+  const resistors = activeComponents.filter((component) => component.type === "resistor");
+  const rheostat = activeComponents.find((component) => component.type === "rheostat");
+  const battery = activeComponents.find((component) => component.type === "battery");
+  const switchComponent = activeComponents.find((component) => component.type === "switch");
+  const lamps = activeComponents.filter((component) => component.type === "lamp");
+  const ammeters = activeComponents.filter((component) => component.type === "ammeter");
+  const voltmeters = activeComponents.filter((component) => component.type === "voltmeter");
   const sliderX = sliderHandleX(rheostat, state.rheostat_ratio);
-  const ammeter = componentMap.ammeter;
-  const voltmeter = componentMap.voltmeter;
-  const ammeterValue = simulation.meter_results.ammeter;
-  const voltmeterValue = simulation.meter_results.voltmeter;
-  const visibleJunctions = scene.components.filter(
-    (component) =>
-      component.type === "junction" &&
-      !["slider_tip", "ammeter_top_node", "ammeter_bottom_node"].includes(component.id)
-  );
+
+  const switchPivot = getPort(scene, `${switchComponent?.id ?? "switch"}.pivot`);
+  const switchTop = getPort(scene, `${switchComponent?.id ?? "switch"}.top`);
+  const switchBottom = getPort(scene, `${switchComponent?.id ?? "switch"}.bottom`);
+  const switchOpen = getPort(scene, `${switchComponent?.id ?? "switch"}.open_contact`);
+  const switchClosed = getPort(scene, `${switchComponent?.id ?? "switch"}.closed_contact`);
+  const batteryLeft = getPort(scene, `${battery?.id ?? "battery"}.left`);
+  const batteryRight = getPort(scene, `${battery?.id ?? "battery"}.right`);
+  const batteryCenterY = batteryLeft?.y ?? batteryRight?.y ?? (battery?.y ?? 600) + 40;
+  const shortOffset = Number(battery?.metadata?.short_plate_offset ?? "42");
+  const longOffset = Number(battery?.metadata?.long_plate_offset ?? "82");
+  const batteryPlateX1 = (batteryLeft?.x ?? (battery?.x ?? 180)) + shortOffset;
+  const batteryPlateX2 = (batteryLeft?.x ?? (battery?.x ?? 180)) + longOffset;
 
   return (
     <svg
       className="circuit-stage"
       viewBox={`0 0 ${scene.canvas.width} ${scene.canvas.height}`}
       role="img"
-      aria-label="图 1 复刻式电路 simulation"
+      aria-label="电路 simulation 舞台"
     >
       <rect width={scene.canvas.width} height={scene.canvas.height} fill="#fffef9" rx="30" />
 
       {scene.wires.map((wire) => {
         const points = resolveWirePoints(scene, wire);
+        if (points.length < 2) {
+          return null;
+        }
         return (
           <polyline
             key={wire.id}
@@ -123,167 +147,252 @@ function CircuitStage({
         );
       })}
 
-      {visibleJunctions.map((component) => (
-        <circle
-          key={component.id}
-          cx={component.x}
-          cy={component.y}
-          r={11}
-          fill={simulation.visual_state.energized ? "#f97316" : "#111827"}
-        />
+      {activeComponents
+        .filter((component) => component.type === "junction")
+        .map((component) => (
+          <circle
+            key={component.id}
+            cx={component.x}
+            cy={component.y}
+            r={8}
+            fill={simulation.visual_state.energized ? "#f97316" : "#111827"}
+          />
+        ))}
+
+      {switchComponent ? (
+        <g
+          className="switch-hitbox"
+          onClick={onToggleSwitch}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              onToggleSwitch();
+            }
+          }}
+        >
+          <circle
+            cx={switchPivot?.x ?? switchComponent.x + switchComponent.width / 2}
+            cy={switchPivot?.y ?? switchComponent.y + switchComponent.height / 2}
+            r="14"
+            fill="#ffffff"
+            stroke="#111827"
+            strokeWidth="6"
+          />
+          <line
+            x1={switchBottom?.x ?? switchComponent.x + switchComponent.width / 2}
+            y1={switchBottom?.y ?? switchComponent.y + switchComponent.height}
+            x2={switchTop?.x ?? switchComponent.x + switchComponent.width / 2}
+            y2={switchTop?.y ?? switchComponent.y}
+            stroke="#111827"
+            strokeWidth="6"
+          />
+          <line
+            x1={(switchPivot?.x ?? switchComponent.x) + 1}
+            y1={(switchPivot?.y ?? switchComponent.y) - 13}
+            x2={state.switch_closed ? switchClosed?.x ?? switchComponent.x : switchOpen?.x ?? switchComponent.x - 48}
+            y2={state.switch_closed ? switchClosed?.y ?? switchComponent.y : switchOpen?.y ?? switchComponent.y + 48}
+            stroke={state.switch_closed ? "#f97316" : "#111827"}
+            strokeWidth="6"
+            strokeLinecap="round"
+          />
+        </g>
+      ) : null}
+
+      {battery ? (
+        <g>
+          <line
+            x1={batteryPlateX1}
+            y1={batteryCenterY - 40}
+            x2={batteryPlateX1}
+            y2={batteryCenterY + 40}
+            stroke="#111827"
+            strokeWidth="6"
+          />
+          <line
+            x1={batteryPlateX2}
+            y1={batteryCenterY - 58}
+            x2={batteryPlateX2}
+            y2={batteryCenterY + 58}
+            stroke="#111827"
+            strokeWidth="6"
+          />
+          <line
+            x1={batteryLeft?.x ?? battery.x}
+            y1={batteryCenterY}
+            x2={batteryPlateX1}
+            y2={batteryCenterY}
+            stroke="#111827"
+            strokeWidth="6"
+            strokeLinecap="round"
+          />
+          <line
+            x1={batteryPlateX2}
+            y1={batteryCenterY}
+            x2={batteryRight?.x ?? battery.x + battery.width}
+            y2={batteryCenterY}
+            stroke="#111827"
+            strokeWidth="6"
+            strokeLinecap="round"
+          />
+        </g>
+      ) : null}
+
+      {resistors.map((component) => (
+        <g key={component.id}>
+          <rect
+            x={component.x}
+            y={component.y}
+            width={component.width}
+            height={component.height}
+            fill="#ffffff"
+            stroke="#111827"
+            strokeWidth="6"
+          />
+          <text x={component.x + component.width / 2 - 8} y={component.y + component.height + 86} className="stage-label stage-label-resistor">
+            {component.label ?? "R"}
+          </text>
+        </g>
       ))}
 
-      <g
-        className="switch-hitbox"
-        onClick={onToggleSwitch}
-        role="button"
-        tabIndex={0}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" || event.key === " ") {
-            event.preventDefault();
-            onToggleSwitch();
-          }
-        }}
-      >
-        <circle cx="92" cy="360" r="14" fill="#ffffff" stroke="#111827" strokeWidth="6" />
-        <line x1="92" y1="373" x2="92" y2="305" stroke="#111827" strokeWidth="6" />
-        <line
-          x1="92"
-          y1="347"
-          x2={state.switch_closed ? 92 : 32}
-          y2={470}
-          stroke={state.switch_closed ? "#f97316" : "#111827"}
-          strokeWidth="6"
-          strokeLinecap="round"
-        />
-      </g>
-
-      <g>
-        <line x1="166" y1="598" x2="166" y2="678" stroke="#111827" strokeWidth="6" />
-        <line x1="197" y1="580" x2="197" y2="696" stroke="#111827" strokeWidth="6" />
-      </g>
-
-      <g>
-        <rect
-          x={componentMap.resistor.x}
-          y={componentMap.resistor.y}
-          width={componentMap.resistor.width}
-          height={componentMap.resistor.height}
-          fill="#ffffff"
-          stroke="#111827"
-          strokeWidth="6"
-        />
-        <text x={componentMap.resistor.x + 75} y={396} className="stage-label stage-label-resistor">
-          R
-        </text>
-      </g>
-
-      <g>
-        <rect
-          x={rheostat.x}
-          y={rheostat.y}
-          width={rheostat.width}
-          height={rheostat.height}
-          fill="#ffffff"
-          stroke="#111827"
-          strokeWidth="6"
-        />
-        <line
-          x1={sliderX}
-          y1={540}
-          x2={sliderX}
-          y2={rheostat.y}
-          stroke="#111827"
-          strokeWidth="6"
-        />
-        <path
-          d={`M ${sliderX} ${rheostat.y} L ${sliderX - 18} ${rheostat.y - 42}`}
-          fill="none"
-          stroke="#111827"
-          strokeWidth="6"
-          strokeLinecap="round"
-        />
-        <circle
-          className="slider-handle"
-          cx={sliderX}
-          cy={rheostat.y - 18}
-          r="16"
-          fill="#f97316"
-          stroke="#111827"
-          strokeWidth="4"
-          onPointerDown={onSliderPointerDown}
-        />
-        <text x={rheostat.x - 26} y={598} className="stage-label stage-label-rheostat">
-          P
-        </text>
-      </g>
-
-      {voltmeter.enabled ? (
+      {rheostat ? (
         <g>
+          <rect
+            x={rheostat.x}
+            y={rheostat.y}
+            width={rheostat.width}
+            height={rheostat.height}
+            fill="#ffffff"
+            stroke="#111827"
+            strokeWidth="6"
+          />
+          <line
+            x1={sliderX}
+            y1={rheostat.y - 80}
+            x2={sliderX}
+            y2={rheostat.y}
+            stroke="#111827"
+            strokeWidth="6"
+          />
           <circle
-            cx={voltmeter.x + voltmeter.width / 2}
-            cy={voltmeter.y + voltmeter.height / 2}
-            r={voltmeter.width / 2}
+            className="slider-handle"
+            cx={sliderX}
+            cy={rheostat.y - 18}
+            r="16"
+            fill="#f97316"
+            stroke="#111827"
+            strokeWidth="4"
+            onPointerDown={onSliderPointerDown}
+          />
+          <text x={rheostat.x - 26} y={rheostat.y - 34} className="stage-label stage-label-rheostat">
+            {rheostat.label ?? "P"}
+          </text>
+        </g>
+      ) : null}
+
+      {lamps.map((component) => (
+        <g key={component.id}>
+          <circle
+            cx={component.x + component.width / 2}
+            cy={component.y + component.height / 2}
+            r={component.width / 2}
+            fill="#ffffff"
+            stroke="#111827"
+            strokeWidth="6"
+          />
+          <line
+            x1={component.x + component.width * 0.25}
+            y1={component.y + component.height * 0.25}
+            x2={component.x + component.width * 0.75}
+            y2={component.y + component.height * 0.75}
+            stroke="#111827"
+            strokeWidth="4"
+          />
+          <line
+            x1={component.x + component.width * 0.75}
+            y1={component.y + component.height * 0.25}
+            x2={component.x + component.width * 0.25}
+            y2={component.y + component.height * 0.75}
+            stroke="#111827"
+            strokeWidth="4"
+          />
+          <text x={component.x + component.width + 8} y={component.y - 4} className="stage-label">
+            {component.label ?? "L"}
+          </text>
+        </g>
+      ))}
+
+      {voltmeters.map((component, index) => (
+        <g key={component.id}>
+          <circle
+            cx={component.x + component.width / 2}
+            cy={component.y + component.height / 2}
+            r={component.width / 2}
             fill="#ffffff"
             stroke="#111827"
             strokeWidth="8"
           />
           <line
-            x1={voltmeter.x + voltmeter.width / 2}
-            y1={voltmeter.y + voltmeter.height / 2}
-            x2={voltmeter.x + voltmeter.width / 2}
-            y2={voltmeter.y + 34}
+            x1={component.x + component.width / 2}
+            y1={component.y + component.height / 2}
+            x2={component.x + component.width / 2}
+            y2={component.y + 34}
             stroke="#111827"
             strokeWidth="4"
             transform={rotatePointer(
-              voltmeter.x + voltmeter.width / 2,
-              voltmeter.y + voltmeter.height / 2,
-              meterAngle(voltmeterValue, state.battery_voltage || 1)
+              component.x + component.width / 2,
+              component.y + component.height / 2,
+              meterAngle(simulation.meter_results.voltmeter, Math.max(state.battery_voltage, 1))
             )}
           />
-          <text x={voltmeter.x + 28} y={voltmeter.y + 74} className="stage-meter-symbol">
+          <text x={component.x + component.width / 2 - 16} y={component.y + component.height / 2 + 16} className="stage-meter-symbol">
             V
           </text>
-          <text x={voltmeter.x + 8} y={voltmeter.y + 130} className="stage-meter-value">
-            {voltmeterValue.toFixed(2)} V
-          </text>
+          {index === 0 ? (
+            <text x={component.x - 6} y={component.y + component.height + 26} className="stage-meter-value">
+              {simulation.meter_results.voltmeter.toFixed(2)} V
+            </text>
+          ) : null}
         </g>
-      ) : null}
+      ))}
 
-      {ammeter.enabled ? (
-        <g>
+      {ammeters.map((component, index) => (
+        <g key={component.id}>
           <circle
-            cx={ammeter.x + ammeter.width / 2}
-            cy={ammeter.y + ammeter.height / 2}
-            r={ammeter.width / 2}
+            cx={component.x + component.width / 2}
+            cy={component.y + component.height / 2}
+            r={component.width / 2}
             fill="#ffffff"
             stroke="#111827"
             strokeWidth="8"
           />
           <line
-            x1={ammeter.x + ammeter.width / 2}
-            y1={ammeter.y + ammeter.height / 2}
-            x2={ammeter.x + ammeter.width / 2}
-            y2={ammeter.y + 30}
+            x1={component.x + component.width / 2}
+            y1={component.y + component.height / 2}
+            x2={component.x + component.width / 2}
+            y2={component.y + 30}
             stroke="#111827"
             strokeWidth="4"
             transform={rotatePointer(
-              ammeter.x + ammeter.width / 2,
-              ammeter.y + ammeter.height / 2,
-              meterAngle(ammeterValue, 1)
+              component.x + component.width / 2,
+              component.y + component.height / 2,
+              meterAngle(simulation.meter_results.ammeter, 1)
             )}
           />
-          <text x={ammeter.x + 20} y={ammeter.y + 64} className="stage-meter-symbol">
+          <text x={component.x + component.width / 2 - 14} y={component.y + component.height / 2 + 14} className="stage-meter-symbol">
             A
           </text>
-          <text x={ammeter.x + 4} y={ammeter.y + 116} className="stage-meter-value">
-            {ammeterValue.toFixed(2)} A
-          </text>
+          {index === 0 ? (
+            <text x={component.x - 8} y={component.y + component.height + 26} className="stage-meter-value">
+              {simulation.meter_results.ammeter.toFixed(2)} A
+            </text>
+          ) : null}
         </g>
-      ) : null}
+      ))}
 
       {showDebugOverlay
-        ? scene.components.flatMap((component) =>
+        ? activeComponents.flatMap((component) =>
             component.ports.map((port) => (
               <g key={`${component.id}-${port.id}`}>
                 <circle cx={port.x} cy={port.y} r={6} fill="#0ea5e9" />
@@ -305,9 +414,16 @@ export function App() {
   const [state, setState] = useState<Figure1State | null>(null);
   const [simulation, setSimulation] = useState<Figure1Simulation | null>(null);
   const [pendingRecognition, setPendingRecognition] = useState<RecognitionPayload | null>(null);
+  const [mechanicsSession, setMechanicsSession] = useState<MechanicsRecognitionPayload | null>(null);
+  const [pendingComponentEdits, setPendingComponentEdits] = useState<Record<string, { id: string; type?: string; value?: number; enabled?: boolean }>>({});
+  const [mechanicsProblemText, setMechanicsProblemText] = useState("");
+  const [mechanicsSolutionText, setMechanicsSolutionText] = useState("");
+  const [mechanicsFinalAnswers, setMechanicsFinalAnswers] = useState("");
+  const [mechanicsImage, setMechanicsImage] = useState<File | null>(null);
+  const [jsonBundleInput, setJsonBundleInput] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [isDragging, setIsDragging] = useState(false);
-  const [showDebugOverlay, setShowDebugOverlay] = useState(false);
+  const [showDebugOverlay, setShowDebugOverlay] = useState(true);
   const [error, setError] = useState<string>("");
   const stageWrapRef = useRef<HTMLDivElement | null>(null);
 
@@ -340,6 +456,10 @@ export function App() {
 
   useEffect(() => {
     if (!isDragging || !scene) {
+      return;
+    }
+    const rheostat = scene.components.find((component) => component.type === "rheostat");
+    if (!rheostat) {
       return;
     }
     const move = (event: PointerEvent) => {
@@ -387,6 +507,7 @@ export function App() {
       return;
     }
     setError("");
+    setPendingComponentEdits({});
     try {
       const result = await recognizeCircuitImage(file);
       setPendingRecognition(result);
@@ -395,20 +516,88 @@ export function App() {
     }
   };
 
-  const applyRecognition = () => {
+  const applyRecognition = async () => {
     if (!pendingRecognition) {
       return;
     }
-    setPayload({
-      reference_image: pendingRecognition.reference_image,
-      scene: pendingRecognition.scene,
-      state: pendingRecognition.state,
-      simulation: pendingRecognition.simulation
-    });
-    setScene(pendingRecognition.scene);
-    setState(pendingRecognition.state);
-    setSimulation(pendingRecognition.simulation);
-    setPendingRecognition(null);
+    try {
+      const updates = {
+        component_updates: Object.values(pendingComponentEdits),
+        state_updates: [{ key: "switch_closed", value: true }]
+      };
+      const confirmed = await confirmRecognizedScene(pendingRecognition.session_id, updates);
+      setPayload({
+        reference_image: pendingRecognition.reference_image,
+        scene: confirmed.scene,
+        state: confirmed.state,
+        simulation: confirmed.simulation
+      });
+      setScene(confirmed.scene);
+      setState(confirmed.state);
+      setSimulation(confirmed.simulation);
+      setPendingRecognition(null);
+      setPendingComponentEdits({});
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  };
+
+  const importJsonBundle = async () => {
+    if (!jsonBundleInput.trim()) {
+      setError("请先粘贴 JSON。");
+      return;
+    }
+    setError("");
+    try {
+      const parsed = JSON.parse(jsonBundleInput);
+      const imported = await importSceneBundle(parsed.scene ? parsed : { scene: parsed });
+      setPayload({
+        reference_image: { id: "manual-json-import", svg: "<svg xmlns='http://www.w3.org/2000/svg'></svg>" },
+        scene: imported.scene,
+        state: imported.state,
+        simulation: imported.simulation
+      });
+      setScene(imported.scene);
+      setState(imported.state);
+      setSimulation(imported.simulation);
+      setPendingRecognition(null);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  };
+
+  const submitMechanicsProblem = async () => {
+    if (!mechanicsProblemText.trim() && !mechanicsImage) {
+      setError("请至少提供力学题题干文本或截图。");
+      return;
+    }
+    setError("");
+    try {
+      const result = await recognizeMechanicsProblem({
+        problemText: mechanicsProblemText,
+        solutionText: mechanicsSolutionText,
+        finalAnswers: mechanicsFinalAnswers,
+        imageFile: mechanicsImage
+      });
+      setMechanicsSession(result);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  };
+
+  const applyMechanicsSelection = async (modelId: string) => {
+    if (!mechanicsSession) {
+      return;
+    }
+    try {
+      const result = await confirmMechanicsProblem(mechanicsSession.session_id, {
+        selected_model_id: modelId,
+        assumption_overrides: modelId === "belt_arc_consistent" ? { belt_reaches_speed: true } : undefined
+      });
+      setMechanicsSession(result);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
   };
 
   const currentPreview = pendingRecognition?.reference_image ?? payload?.reference_image;
@@ -417,26 +606,35 @@ export function App() {
     [scene]
   );
 
-  if (loading || !scene || !state || !simulation || !payload) {
+  if (loading) {
     return <main className="loading-shell">正在加载图 1 simulation...</main>;
+  }
+
+  if (!scene || !state || !simulation || !payload) {
+    return (
+      <main className="loading-shell">
+        <div>
+          <p>页面初始化失败，请确认前后端服务都已启动。</p>
+          {error ? <pre className="error-text">{error}</pre> : null}
+          <button onClick={() => window.location.reload()}>重试加载</button>
+        </div>
+      </main>
+    );
   }
 
   return (
     <main className="sim-app">
       <header className="sim-hero">
         <div>
-          <p className="sim-kicker">Figure 1 Simulation</p>
-          <h1>图 1 修正版 + 干净电路图识别入口</h1>
+          <p className="sim-kicker">Figure 1 + Recognition V2</p>
+          <h1>图 1 闭合修复 + 未知干净电路图识别确认</h1>
           <p className="sim-description">
-            图 1 现在使用端口驱动连线；你也可以上传一张干净规整的教材电路图，先识别再进入 simulation。
+            舞台连线由端口驱动并做闭合校验；上传未知电路图后先进入确认流程，再应用到可交互 simulation。
           </p>
         </div>
         <div className="sample-summary">
           {samples.map((sample) => (
-            <span
-              key={sample.id}
-              className={`sample-tag ${sample.status === "ready" ? "sample-tag-live" : ""}`}
-            >
+            <span key={sample.id} className={`sample-tag ${sample.status === "ready" ? "sample-tag-live" : ""}`}>
               {sample.title}
             </span>
           ))}
@@ -448,7 +646,7 @@ export function App() {
           <div className="stage-toolbar">
             <div>
               <h2>电路舞台</h2>
-              <p>导线端点由元件端口驱动，可切换调试叠加层检查是否闭合。</p>
+              <p>端口、节点、导线端点可追溯；调试叠加层默认开启便于检查闭合。</p>
             </div>
             <div className="toolbar-actions">
               <label className="debug-toggle">
@@ -459,11 +657,7 @@ export function App() {
                 />
                 显示端口
               </label>
-              <button
-                onClick={() =>
-                  setState((current) => current && { ...current, switch_closed: !current.switch_closed })
-                }
-              >
+              <button onClick={() => setState((current) => current && { ...current, switch_closed: !current.switch_closed })}>
                 {state.switch_closed ? "断开开关" : "闭合开关"}
               </button>
             </div>
@@ -474,9 +668,7 @@ export function App() {
               state={state}
               simulation={simulation}
               showDebugOverlay={showDebugOverlay}
-              onToggleSwitch={() =>
-                setState((current) => current && { ...current, switch_closed: !current.switch_closed })
-              }
+              onToggleSwitch={() => setState((current) => current && { ...current, switch_closed: !current.switch_closed })}
               onSliderPointerDown={() => setIsDragging(true)}
             />
           </div>
@@ -496,17 +688,160 @@ export function App() {
             {pendingRecognition ? (
               <div className="recognition-review">
                 <p>
-                  识别置信度：<strong>{pendingRecognition.detections.confidence.toFixed(2)}</strong>
+                  识别置信度：<strong>{pendingRecognition.confidence_breakdown.overall.toFixed(2)}</strong>
                 </p>
-                <p>
-                  {pendingRecognition.needs_confirmation
-                    ? "该结果建议先人工确认后再进入 simulation。"
-                    : "识别结果置信度较高，可以直接应用到舞台。"}
-                </p>
-                <button onClick={applyRecognition}>应用识别结果</button>
+                <p>符号检测：{pendingRecognition.confidence_breakdown.symbol_detection.toFixed(2)}，拓扑重建：{pendingRecognition.confidence_breakdown.topology_reconstruction.toFixed(2)}</p>
+                <p>{pendingRecognition.needs_confirmation ? "建议先确认后应用。" : "识别质量较高，可直接应用。"}</p>
+                <button onClick={applyRecognition}>确认并应用到舞台</button>
               </div>
             ) : null}
           </section>
+
+          <section className="control-section">
+            <h2>力学题双证据校验</h2>
+            <label>
+              题目截图
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/jpg"
+                onChange={(event) => setMechanicsImage(event.target.files?.[0] ?? null)}
+              />
+            </label>
+            <label>
+              题干文本
+              <textarea
+                rows={6}
+                value={mechanicsProblemText}
+                onChange={(event) => setMechanicsProblemText(event.target.value)}
+                placeholder="粘贴题干文本，首版会优先用文本抽模。"
+              />
+            </label>
+            <label>
+              解析文本
+              <textarea
+                rows={6}
+                value={mechanicsSolutionText}
+                onChange={(event) => setMechanicsSolutionText(event.target.value)}
+                placeholder="粘贴教师解析，用作第二份证据。"
+              />
+            </label>
+            <label>
+              参考答案
+              <input
+                type="text"
+                value={mechanicsFinalAnswers}
+                onChange={(event) => setMechanicsFinalAnswers(event.target.value)}
+                placeholder="例如：4m/s;0.9J;0.2m;3N"
+              />
+            </label>
+            <button onClick={submitMechanicsProblem}>识别并校验力学模型</button>
+            {mechanicsSession ? (
+              <div className="recognition-review mechanics-review">
+                <p>
+                  总置信度：<strong>{(mechanicsSession.confidence_breakdown.overall ?? 0).toFixed(2)}</strong>
+                </p>
+                <p>{mechanicsSession.problem_representation.summary}</p>
+                <p>
+                  当前模型：<strong>{mechanicsSession.selected_model.title}</strong>
+                </p>
+                {Object.values(mechanicsSession.simulation.answers).map((answer) => (
+                  <p key={answer.key}>
+                    {answer.label}：<strong>{answer.display_value}</strong>
+                    {answer.expected_value ? ` / 参考 ${answer.expected_value}` : ""}
+                  </p>
+                ))}
+                {mechanicsSession.conflict_items.map((item) => (
+                  <p key={item.id} className="error-text">
+                    [{item.severity}] {item.message}
+                    {item.expected || item.actual
+                      ? `（期望 ${item.expected ?? "-"}，当前 ${item.actual ?? "-"}）`
+                      : ""}
+                  </p>
+                ))}
+                <div className="mechanics-actions">
+                  {mechanicsSession.candidate_models.map((model) => (
+                    <button
+                      key={model.id}
+                      type="button"
+                      onClick={() => applyMechanicsSelection(model.id)}
+                    >
+                      采用 {model.title}
+                    </button>
+                  ))}
+                </div>
+                <details className="debug-panel">
+                  <summary>展开建模细节</summary>
+                  <pre>{JSON.stringify(mechanicsSession, null, 2)}</pre>
+                </details>
+              </div>
+            ) : null}
+          </section>
+
+          <section className="control-section">
+            <h3>JSON 导入</h3>
+            <label>
+              粘贴 <code>scene_bundle.json</code>（支持 <code>{"{scene,state}"}</code> 或直接 <code>scene</code>）
+              <textarea
+                rows={8}
+                value={jsonBundleInput}
+                onChange={(event) => setJsonBundleInput(event.target.value)}
+                placeholder='{"scene": {...}, "state": {...}}'
+              />
+            </label>
+            <button onClick={importJsonBundle}>导入 JSON 并生成 simulation</button>
+          </section>
+
+          {pendingRecognition ? (
+            <section className="control-section">
+              <h3>识别确认</h3>
+              {pendingRecognition.issues.map((issue) => (
+                <p key={issue.id} className="error-text">
+                  [{issue.level}] {issue.message}
+                </p>
+              ))}
+              {pendingRecognition.scene.components
+                .filter((component) => component.type !== "junction")
+                .slice(0, 10)
+                .map((component) => {
+                  const patch = pendingComponentEdits[component.id] ?? { id: component.id };
+                  return (
+                    <div key={component.id} className="toggle-row">
+                      <span>{component.label ?? component.id}</span>
+                      <select
+                        value={patch.type ?? component.type}
+                        onChange={(event) =>
+                          setPendingComponentEdits((current) => ({
+                            ...current,
+                            [component.id]: { ...patch, id: component.id, type: event.target.value }
+                          }))
+                        }
+                      >
+                        {["battery", "switch", "resistor", "lamp", "ammeter", "voltmeter", "rheostat"].map((item) => (
+                          <option key={item} value={item}>
+                            {item}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        type="number"
+                        step="0.5"
+                        value={patch.value ?? component.value ?? 10}
+                        onChange={(event) =>
+                          setPendingComponentEdits((current) => ({
+                            ...current,
+                            [component.id]: {
+                              ...patch,
+                              id: component.id,
+                              value: Number(event.target.value)
+                            }
+                          }))
+                        }
+                      />
+                    </div>
+                  );
+                })}
+            </section>
+          ) : null}
 
           <section className="control-section">
             <h3>当前读数</h3>
@@ -526,33 +861,15 @@ export function App() {
             <h3>数值调节</h3>
             <label>
               电源电压
-              <input
-                type="number"
-                min="0"
-                step="0.5"
-                value={state.battery_voltage}
-                onChange={(event) => updateNumber("battery_voltage", event.target.value)}
-              />
+              <input type="number" min="0" step="0.5" value={state.battery_voltage} onChange={(event) => updateNumber("battery_voltage", event.target.value)} />
             </label>
             <label>
               固定电阻 R
-              <input
-                type="number"
-                min="0.1"
-                step="0.5"
-                value={state.resistor_value}
-                onChange={(event) => updateNumber("resistor_value", event.target.value)}
-              />
+              <input type="number" min="0.1" step="0.5" value={state.resistor_value} onChange={(event) => updateNumber("resistor_value", event.target.value)} />
             </label>
             <label>
               滑变总阻值 P
-              <input
-                type="number"
-                min="0.1"
-                step="0.5"
-                value={state.rheostat_total}
-                onChange={(event) => updateNumber("rheostat_total", event.target.value)}
-              />
+              <input type="number" min="0.1" step="0.5" value={state.rheostat_total} onChange={(event) => updateNumber("rheostat_total", event.target.value)} />
             </label>
             <label>
               滑片位置
@@ -563,9 +880,7 @@ export function App() {
                 step="0.01"
                 value={state.rheostat_ratio}
                 onChange={(event) =>
-                  setState((current) =>
-                    current ? { ...current, rheostat_ratio: Number(event.target.value) } : current
-                  )
+                  setState((current) => (current ? { ...current, rheostat_ratio: Number(event.target.value) } : current))
                 }
               />
             </label>
@@ -576,11 +891,7 @@ export function App() {
             {removableComponents.map((component) => (
               <label key={component.id} className="toggle-row">
                 <span>{component.label ?? component.id}</span>
-                <input
-                  type="checkbox"
-                  checked={component.enabled}
-                  onChange={(event) => toggleComponent(component.id, event.target.checked)}
-                />
+                <input type="checkbox" checked={component.enabled} onChange={(event) => toggleComponent(component.id, event.target.checked)} />
               </label>
             ))}
           </section>
@@ -592,8 +903,8 @@ export function App() {
 
           {pendingRecognition ? (
             <details className="debug-panel" open>
-              <summary>识别草图</summary>
-              <pre>{JSON.stringify(pendingRecognition.detections, null, 2)}</pre>
+              <summary>识别调试信息</summary>
+              <pre>{JSON.stringify(pendingRecognition, null, 2)}</pre>
             </details>
           ) : null}
 

@@ -409,6 +409,151 @@ class BackendCoreTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 400)
 
+    def test_import_scene_json_api_accepts_scene_bundle(self):
+        create_app = load_attr("backend.app.main", "create_app")
+        TestClient = load_attr("fastapi.testclient", "TestClient")
+
+        client = TestClient(create_app())
+        scene = {
+            "id": "imported-demo",
+            "title": "Imported",
+            "canvas": {"width": 500, "height": 300},
+            "components": [
+                {
+                    "id": "bat1",
+                    "type": "battery",
+                    "x": 80,
+                    "y": 220,
+                    "width": 80,
+                    "height": 40,
+                    "ports": [
+                        {"id": "left", "x": 80, "y": 240},
+                        {"id": "right", "x": 160, "y": 240},
+                    ],
+                },
+                {
+                    "id": "sw1",
+                    "type": "switch",
+                    "x": 180,
+                    "y": 90,
+                    "width": 80,
+                    "height": 130,
+                    "ports": [
+                        {"id": "top", "x": 220, "y": 100},
+                        {"id": "bottom", "x": 220, "y": 240},
+                    ],
+                },
+                {
+                    "id": "r1",
+                    "type": "resistor",
+                    "x": 280,
+                    "y": 90,
+                    "width": 80,
+                    "height": 30,
+                    "ports": [
+                        {"id": "a", "x": 280, "y": 105},
+                        {"id": "b", "x": 360, "y": 105},
+                    ],
+                    "value": 10.0,
+                },
+                {"id": "n1", "type": "junction", "x": 220, "y": 100, "width": 10, "height": 10},
+                {"id": "n2", "type": "junction", "x": 360, "y": 105, "width": 10, "height": 10},
+                {"id": "n0", "type": "junction", "x": 220, "y": 240, "width": 10, "height": 10},
+            ],
+            "wires": [
+                {"id": "w1", "start_ref": "sw1.top", "end_ref": "r1.a", "role": "main"},
+                {"id": "w2", "start_ref": "r1.b", "end_ref": "n2", "role": "main"},
+                {"id": "w3", "start_ref": "bat1.right", "end_ref": "n1", "role": "main"},
+                {"id": "w4", "start_ref": "bat1.left", "end_ref": "n0", "role": "main"},
+                {"id": "w5", "start_ref": "sw1.bottom", "end_ref": "n0", "role": "main"},
+            ],
+            "meter_anchors": [],
+            "circuit_topology": {
+                "node_ids": ["n1", "n2", "n0"],
+                "connections": [
+                    {"component_id": "bat1", "terminal": "positive", "node_id": "n1"},
+                    {"component_id": "bat1", "terminal": "negative", "node_id": "n0"},
+                    {"component_id": "sw1", "terminal": "a", "node_id": "n1"},
+                    {"component_id": "sw1", "terminal": "b", "node_id": "n2"},
+                    {"component_id": "r1", "terminal": "a", "node_id": "n2"},
+                    {"component_id": "r1", "terminal": "b", "node_id": "n0"},
+                ],
+            },
+        }
+        response = client.post(
+            "/api/scenes/import-json",
+            json={"scene": scene, "state": {"switch_closed": True, "battery_voltage": 6.0}},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["scene"]["id"], "imported-demo")
+        self.assertIn("simulation", payload)
+
+    def test_import_scene_json_defaults_to_open_switch_and_black_wires(self):
+        create_app = load_attr("backend.app.main", "create_app")
+        TestClient = load_attr("fastapi.testclient", "TestClient")
+
+        client = TestClient(create_app())
+        scene = {
+            "id": "imported-open-default",
+            "title": "Imported Open Default",
+            "canvas": {"width": 320, "height": 220},
+            "components": [
+                {
+                    "id": "battery_1",
+                    "type": "battery",
+                    "x": 40,
+                    "y": 180,
+                    "width": 40,
+                    "height": 20,
+                    "ports": [{"id": "left", "x": 40, "y": 190}, {"id": "right", "x": 80, "y": 190}],
+                },
+                {
+                    "id": "switch_1",
+                    "type": "switch",
+                    "x": 240,
+                    "y": 20,
+                    "width": 40,
+                    "height": 40,
+                    "ports": [{"id": "top", "x": 260, "y": 30}, {"id": "bottom", "x": 260, "y": 70}],
+                },
+                {
+                    "id": "r1",
+                    "type": "resistor",
+                    "x": 120,
+                    "y": 20,
+                    "width": 50,
+                    "height": 20,
+                    "value": 10.0,
+                    "ports": [{"id": "a", "x": 120, "y": 30}, {"id": "b", "x": 170, "y": 30}],
+                },
+                {"id": "n0", "type": "junction", "x": 40, "y": 30, "width": 10, "height": 10},
+                {"id": "n1", "type": "junction", "x": 170, "y": 30, "width": 10, "height": 10},
+                {"id": "n2", "type": "junction", "x": 260, "y": 30, "width": 10, "height": 10},
+                {"id": "n3", "type": "junction", "x": 260, "y": 190, "width": 10, "height": 10},
+            ],
+            "wires": [{"id": "w", "role": "main", "start_ref": "n0", "end_ref": "n2"}],
+            "meter_anchors": [],
+            "circuit_topology": {
+                "node_ids": ["n0", "n1", "n2", "n3"],
+                "connections": [
+                    {"component_id": "battery_1", "terminal": "negative", "node_id": "n0"},
+                    {"component_id": "battery_1", "terminal": "positive", "node_id": "n3"},
+                    {"component_id": "switch_1", "terminal": "a", "node_id": "n3"},
+                    {"component_id": "switch_1", "terminal": "b", "node_id": "n2"},
+                    {"component_id": "r1", "terminal": "a", "node_id": "n2"},
+                    {"component_id": "r1", "terminal": "b", "node_id": "n0"},
+                ],
+            },
+        }
+        response = client.post("/api/scenes/import-json", json={"scene": scene})
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertFalse(payload["state"]["switch_closed"])
+        self.assertFalse(payload["simulation"]["visual_state"]["energized"])
+        self.assertEqual(payload["simulation"]["visual_state"]["highlighted_wires"], [])
+
     def test_figure1_scene_geometry_has_no_open_wire_endpoints(self):
         build_figure1_scene = load_attr(
             "backend.app.scenes.figure1", "build_figure1_scene"
@@ -476,7 +621,265 @@ class BackendCoreTests(unittest.TestCase):
         self.assertEqual(payload["scene"]["id"], "recognized-clean-circuit")
         self.assertIn("simulation", payload)
         self.assertIn("detections", payload)
+        self.assertIn("session_id", payload)
+        self.assertIn("confidence_breakdown", payload)
         self.assertGreater(payload["simulation"]["meter_results"]["ammeter"], 0.0)
+
+    def test_recognition_confirm_endpoint_applies_component_update(self):
+        import cv2
+        import numpy as np
+
+        create_app = load_attr("backend.app.main", "create_app")
+        TestClient = load_attr("fastapi.testclient", "TestClient")
+
+        image = np.full((520, 860, 3), 255, dtype=np.uint8)
+        stroke = (15, 23, 42)
+        cv2.line(image, (100, 120), (760, 120), stroke, 8)
+        cv2.line(image, (760, 120), (760, 400), stroke, 8)
+        cv2.line(image, (760, 400), (100, 400), stroke, 8)
+        cv2.line(image, (100, 400), (100, 120), stroke, 8)
+        cv2.rectangle(image, (280, 95), (420, 150), stroke, 8)
+        cv2.circle(image, (620, 120), 42, stroke, 8)
+        cv2.line(image, (200, 360), (200, 450), stroke, 8)
+        cv2.line(image, (230, 345), (230, 465), stroke, 8)
+        success, encoded = cv2.imencode(".png", image)
+        self.assertTrue(success)
+
+        client = TestClient(create_app())
+        recognize = client.post(
+            "/api/recognize",
+            files={"file": ("confirm.png", encoded.tobytes(), "image/png")},
+        )
+        self.assertEqual(recognize.status_code, 200)
+        session = recognize.json()
+        components = [
+            component
+            for component in session["scene"]["components"]
+            if component["type"] != "junction"
+        ]
+        self.assertGreater(len(components), 0)
+
+        response = client.post(
+            f"/api/recognize/{session['session_id']}/confirm",
+            json={
+                "updates": {
+                    "component_updates": [
+                        {"id": components[0]["id"], "type": "resistor", "value": 22.0}
+                    ],
+                    "state_updates": [{"key": "switch_closed", "value": True}],
+                }
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        confirmed = response.json()
+        updated_component = next(
+            item
+            for item in confirmed["scene"]["components"]
+            if item["id"] == components[0]["id"]
+        )
+        self.assertEqual(updated_component["type"], "resistor")
+        self.assertAlmostEqual(updated_component["value"], 22.0, places=3)
+
+
+
+    def test_mechanics_recognize_endpoint_returns_selected_model_for_consistent_solution(self):
+        create_app = load_attr("backend.app.main", "create_app")
+        TestClient = load_attr("fastapi.testclient", "TestClient")
+
+        client = TestClient(create_app())
+        problem_text = (
+            "17. 某兴趣小组设计了一个传送装置，AB是倾角为30°的斜轨道，BC是以恒定速率v0顺时针转动的水平传送带，"
+            "靠近C端有半径为R、质量为M置于光滑水平面上的可动半圆弧轨道。现有一质量为m的物块，从AB上距B点L的P点由静止下滑，"
+            "经传送带末端C点滑入圆弧轨道。物块与传送带间的动摩擦因数为μ，其余接触面均光滑。"
+            "已知R=0.36m，L=1.6m，v0=5m/s，m=0.2kg，M=1.8kg，μ=0.25。求物块滑到B点处的速度大小、"
+            "从B运动到C过程中摩擦力对其做的功、在传送带上滑动过程中产生的滑痕长度、即将离开圆弧轨道最高点的瞬间受到轨道的压力大小。"
+        )
+        solution_text = (
+            "滑块由P点到B点由动能定理得 mgsin30°L = 1/2 mv^2，解得 v=4m/s。"
+            "物块滑上传送带后做匀加速运动直至与传送带共速，摩擦力对其做功 Wf = 1/2 mv0^2 - 1/2 mv^2 = 0.9J。"
+            "加速度为 a=μg=2.5m/s^2，加速时间 t=(v0-v)/a=0.4s，滑痕长度 Δx=v0 t - (v0+v)t/2 = 0.2m。"
+            "物块开始进入圆弧轨道到到达即将最高点由水平方向动量守恒和机械能守恒可知，1/2 mv0^2 = 1/2 mv1^2 + 1/2 Mv2^2 + 2mgR，"
+            "解得 v1=0.8m/s。对滑块在最高点由牛顿第二定律得 F+mg = m(v1-v2)^2/R，解得 F=3N。"
+        )
+        response = client.post(
+            "/api/mechanics/recognize",
+            data={
+                "problem_text": problem_text,
+                "solution_text": solution_text,
+                "final_answers": "4m/s;0.9J;0.2m;3N",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertIn("problem_representation", payload)
+        self.assertIn("candidate_models", payload)
+        self.assertIn("selected_model", payload)
+        self.assertIn("solution_model", payload)
+        self.assertIn("simulation", payload)
+        self.assertFalse(payload["needs_confirmation"])
+        self.assertEqual(payload["selected_model"]["id"], "belt_arc_consistent")
+        self.assertEqual(payload["simulation"]["answers"]["q1"]["display_value"], "4 m/s")
+        self.assertEqual(payload["simulation"]["answers"]["q2"]["display_value"], "0.9 J")
+        self.assertEqual(payload["simulation"]["answers"]["q3"]["display_value"], "0.2 m")
+        self.assertEqual(payload["simulation"]["answers"]["q4"]["display_value"], "3 N")
+
+    def test_mechanics_recognize_endpoint_flags_conflicts_for_mismatched_solution(self):
+        create_app = load_attr("backend.app.main", "create_app")
+        TestClient = load_attr("fastapi.testclient", "TestClient")
+
+        client = TestClient(create_app())
+        response = client.post(
+            "/api/mechanics/recognize",
+            data={
+                "problem_text": "斜面、传送带和半圆轨道综合题，已知R=0.36m，L=1.6m，v0=5m/s，m=0.2kg，M=1.8kg，μ=0.25。",
+                "solution_text": "滑到B点速度是5m/s，摩擦做功0.4J，滑痕0.1m，压力1N。",
+                "final_answers": "5m/s;0.4J;0.1m;1N",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["needs_confirmation"])
+        self.assertGreaterEqual(len(payload["conflict_items"]), 1)
+        self.assertTrue(any(item["kind"] == "answer_mismatch" for item in payload["conflict_items"]))
+
+    def test_mechanics_recognize_endpoint_degrades_without_solution_text(self):
+        create_app = load_attr("backend.app.main", "create_app")
+        TestClient = load_attr("fastapi.testclient", "TestClient")
+
+        client = TestClient(create_app())
+        response = client.post(
+            "/api/mechanics/recognize",
+            data={
+                "problem_text": "斜面、传送带和半圆轨道综合题，已知R=0.36m，L=1.6m，v0=5m/s，m=0.2kg，M=1.8kg，μ=0.25。",
+                "final_answers": "4m/s;0.9J;0.2m;3N",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["needs_confirmation"])
+        self.assertLess(payload["confidence_breakdown"]["overall"], 0.9)
+        self.assertEqual(payload["simulation"]["answers"]["q4"]["display_value"], "3 N")
+
+    def test_mechanics_confirm_endpoint_accepts_candidate_override(self):
+        create_app = load_attr("backend.app.main", "create_app")
+        TestClient = load_attr("fastapi.testclient", "TestClient")
+
+        client = TestClient(create_app())
+        session = client.post(
+            "/api/mechanics/recognize",
+            data={
+                "problem_text": "斜面、传送带和半圆轨道综合题，已知R=0.36m，L=1.6m，v0=5m/s，m=0.2kg，M=1.8kg，μ=0.25。",
+                "solution_text": "滑到B点速度是5m/s，摩擦做功0.4J，滑痕0.1m，压力1N。",
+                "final_answers": "5m/s;0.4J;0.1m;1N",
+            },
+        ).json()
+
+        response = client.post(
+            f"/api/mechanics/{session['session_id']}/confirm",
+            json={
+                "updates": {
+                    "selected_model_id": "belt_arc_consistent",
+                    "assumption_overrides": {"belt_reaches_speed": True},
+                }
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["selected_model"]["id"], "belt_arc_consistent")
+        self.assertFalse(payload["needs_confirmation"])
+        self.assertEqual(payload["simulation"]["answers"]["q1"]["display_value"], "4 m/s")
+
+    def test_mechanics_harness_packet_declares_dev_proxy_execution(self):
+        normalize_mechanics_inputs = load_attr(
+            "backend.app.mechanics.parsing.normalize", "normalize_mechanics_inputs"
+        )
+        build_mechanics_harness_packet = load_attr(
+            "backend.app.mechanics.harness", "build_mechanics_harness_packet"
+        )
+
+        normalized = normalize_mechanics_inputs(
+            problem_text="斜面、传送带和半圆轨道综合题，已知R=0.36m，L=1.6m，v0=5m/s，m=0.2kg，M=1.8kg，μ=0.25。",
+            solution_text="由动能定理得v=4m/s。",
+            final_answers="4m/s;0.9J;0.2m;3N",
+        )
+        harness = build_mechanics_harness_packet(normalized)
+
+        self.assertEqual(harness["mode"], "agent_harness")
+        self.assertEqual(harness["executor"], "dev_proxy")
+        self.assertIn("selected_model", harness["required_outputs"])
+        self.assertTrue(any("不要把参考答案硬拟合" in item for item in harness["guardrails"]))
+
+    def test_mechanics_recognize_response_includes_executor_artifacts(self):
+        create_app = load_attr("backend.app.main", "create_app")
+        TestClient = load_attr("fastapi.testclient", "TestClient")
+
+        client = TestClient(create_app())
+        response = client.post(
+            "/api/mechanics/recognize",
+            data={
+                "problem_text": "斜面、传送带和半圆轨道综合题，已知R=0.36m，L=1.6m，v0=5m/s，m=0.2kg，M=1.8kg，μ=0.25。",
+                "solution_text": "由动能定理得v=4m/s，摩擦做功0.9J，滑痕0.2m，压力3N。",
+                "final_answers": "4m/s;0.9J;0.2m;3N",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["execution_mode"], "dev_proxy")
+        self.assertIn("executor_run", payload)
+        self.assertIn("tool_trace", payload["executor_run"])
+        self.assertGreaterEqual(len(payload["executor_run"]["tool_trace"]), 4)
+        self.assertIn("verification_report", payload)
+        self.assertIn("final_simulation_spec", payload)
+        self.assertEqual(
+            payload["final_simulation_spec"]["answers"]["q4"]["display_value"], "3 N"
+        )
+
+    def test_mechanics_dev_proxy_executor_runs_declared_tools(self):
+        normalize_mechanics_inputs = load_attr(
+            "backend.app.mechanics.parsing.normalize", "normalize_mechanics_inputs"
+        )
+        build_mechanics_harness_packet = load_attr(
+            "backend.app.mechanics.harness", "build_mechanics_harness_packet"
+        )
+        run_dev_proxy_executor = load_attr(
+            "backend.app.mechanics.executor.dev_proxy", "run_dev_proxy_executor"
+        )
+
+        normalized = normalize_mechanics_inputs(
+            problem_text="斜面、传送带和半圆轨道综合题，已知R=0.36m，L=1.6m，v0=5m/s，m=0.2kg，M=1.8kg，μ=0.25。",
+            solution_text="由动能定理得v=4m/s，摩擦做功0.9J，滑痕0.2m，压力3N。",
+            final_answers="4m/s;0.9J;0.2m;3N",
+        )
+        harness = build_mechanics_harness_packet(normalized)
+        result = run_dev_proxy_executor(harness, preferred_model_id=None)
+
+        tool_names = [item["tool"] for item in result["tool_trace"]]
+        self.assertEqual(tool_names[:4], [
+            "extract_problem_representation",
+            "build_candidate_models",
+            "extract_solution_model",
+            "simulate_candidate_models",
+        ])
+        self.assertIn("verification_report", result)
+        self.assertEqual(result["selected_model"]["id"], "belt_arc_consistent")
+
+    def test_recognition_confirm_endpoint_rejects_unknown_session(self):
+        create_app = load_attr("backend.app.main", "create_app")
+        TestClient = load_attr("fastapi.testclient", "TestClient")
+
+        client = TestClient(create_app())
+        response = client.post(
+            "/api/recognize/missing-session/confirm",
+            json={"updates": {}},
+        )
+
+        self.assertEqual(response.status_code, 404)
 
 
 if __name__ == "__main__":

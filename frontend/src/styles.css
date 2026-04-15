@@ -230,15 +230,24 @@ input {
 }
 
 .control-section input[type="number"],
-.control-section input[type="range"] {
+.control-section input[type="range"],
+.control-section input[type="text"],
+.control-section textarea {
   width: 100%;
 }
 
-.control-section input[type="number"] {
+.control-section input[type="number"],
+.control-section input[type="text"],
+.control-section textarea {
   border-radius: 14px;
   border: 1px solid #cbd5e1;
   padding: 11px 12px;
   background: white;
+}
+
+.control-section textarea {
+  resize: vertical;
+  min-height: 120px;
 }
 
 .toggle-row {
@@ -285,6 +294,12 @@ input {
   background: #ea580c;
   color: white;
   cursor: pointer;
+}
+
+.mechanics-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 .debug-panel {
