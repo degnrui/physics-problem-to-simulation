@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import copy
+import os
 from typing import Any, Dict, Optional
 
-from backend.app.mechanics.executor import run_dev_proxy_executor
+from backend.app.mechanics.executor import run_executor
 from backend.app.mechanics.harness import (
     build_mechanics_harness_packet,
 )
 from backend.app.mechanics.parsing import normalize_mechanics_inputs
+from backend.app.mechanics.runtime import render_mechanics_runtime_frame
+from backend.app.mechanics.scene import compile_mechanics_scene
 
 
 def _confidence(problem_text: bool, solution_text: bool, conflicts: int, issues: int) -> Dict[str, float]:
@@ -40,7 +43,12 @@ def recognize_mechanics_problem(
         image_filename=image_filename,
     )
     harness = build_mechanics_harness_packet(normalized)
-    executor_run = run_dev_proxy_executor(harness, preferred_model_id=preferred_model_id)
+    executor_mode = os.getenv("EXECUTOR_MODE", harness.get("executor", "dev_proxy"))
+    executor_run = run_executor(
+        harness,
+        {"mode": executor_mode},
+        preferred_model_id=preferred_model_id,
+    )
     confidence_breakdown = _confidence(
         normalized["has_problem_text"],
         normalized["has_solution_text"],
@@ -56,6 +64,7 @@ def recognize_mechanics_problem(
             "executor": executor_run["executor"],
             "tool_trace": executor_run["tool_trace"],
             "intermediate_artifacts": executor_run["intermediate_artifacts"],
+            "runtime_warnings": executor_run.get("runtime_warnings", []),
         },
         "problem_representation": executor_run["problem_representation"],
         "candidate_models": executor_run["candidate_models"],
@@ -68,7 +77,7 @@ def recognize_mechanics_problem(
         "needs_confirmation": needs_confirmation,
         "confidence_breakdown": confidence_breakdown,
         "issues": executor_run["issues"],
-        "execution_mode": "dev_proxy",
+        "execution_mode": executor_mode,
         "normalized_input": {
             "problem_text": normalized["problem_text"],
             "solution_text": normalized["solution_text"],
@@ -104,3 +113,52 @@ def apply_mechanics_confirmation(
     confirmed["conflict_items"] = []
     confirmed["issues"] = []
     return confirmed
+
+
+def generate_mechanics_scene(session_payload: Dict[str, Any]) -> Dict[str, Any]:
+    scene = compile_mechanics_scene(
+        session_id=session_payload["session_id"],
+        problem_representation=session_payload["problem_representation"],
+        simulation_spec=session_payload["final_simulation_spec"],
+        selected_model=session_payload["selected_model"],
+    )
+    payload = {
+        "scene": scene.model_dump(),
+        "verification_report": session_payload["verification_report"],
+        "final_simulation_spec": session_payload["final_simulation_spec"],
+    }
+    session_payload["teaching_scene"] = payload["scene"]
+    return payload
+
+
+def simulate_mechanics_scene(
+    session_payload: Dict[str, Any],
+    *,
+    stage_id: str,
+    progress: float,
+) -> Dict[str, Any]:
+    scene_payload = session_payload.get("teaching_scene")
+    if not scene_payload:
+        scene_payload = generate_mechanics_scene(session_payload)["scene"]
+
+    frame = render_mechanics_runtime_frame(
+        scene=compile_mechanics_scene(
+            session_id=session_payload["session_id"],
+            problem_representation=session_payload["problem_representation"],
+            simulation_spec=session_payload["final_simulation_spec"],
+            selected_model=session_payload["selected_model"],
+        ),
+        stage_id=stage_id,
+        progress=progress,
+        simulation_spec=session_payload["final_simulation_spec"],
+    )
+    stage = next(
+        (item for item in scene_payload["stages"] if item["id"] == stage_id),
+        scene_payload["stages"][0],
+    )
+    return {
+        "scene": scene_payload,
+        "stage": stage,
+        "frame": frame.model_dump(),
+        "verification_report": session_payload["verification_report"],
+    }

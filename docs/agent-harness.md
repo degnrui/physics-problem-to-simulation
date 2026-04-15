@@ -17,7 +17,7 @@
 
 ## 开发阶段执行模式
 
-首版 mechanics 链路采用 `execution_mode=dev_proxy`：
+首版 mechanics 链路默认采用 `execution_mode=dev_proxy`：
 
 - 不直接调用外部模型 API
 - 先把 harness 设计清楚
@@ -47,10 +47,31 @@
 
 ## 后续方向
 
+现在 mechanics 主链路已经分成 5 层：
+
+1. `input/session layer`
+2. `harness layer`
+3. `executor layer`
+4. `tool/runtime layer`
+5. `presentation layer`
+
+当前贯通路径是：
+
+`problem input -> harness packet -> executor -> tool trace -> verification_report -> final_simulation_spec -> mechanics_scene -> runtime frame -> teaching simulation`
+
+其中：
+
+- `backend/app/mechanics/harness.py` 负责任务包和护栏
+- `backend/app/mechanics/executor/` 负责 `dev_proxy` 与 `api_model` 契约
+- `backend/app/mechanics/scene.py` 负责 scene compiler
+- `backend/app/mechanics/runtime.py` 负责 teaching runtime frame
+- `frontend/src/App.tsx` 把 scene/runtime 渲染成教师工作台
+
 当 harness 稳定后，应把执行器从 `dev_proxy` 切换为真正的模型适配层：
 
 - `executor=api_model`
 - 输入保持同一份 harness packet
 - 输出仍写回相同的 session / confirm / audit 契约
+- teaching scene 与 runtime 契约保持不变
 
 这样替换的是“执行器”，不是整条产品链路。

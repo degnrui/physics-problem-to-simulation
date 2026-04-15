@@ -168,6 +168,56 @@ export type MechanicsSimulation = {
   summary: Record<string, unknown>;
 };
 
+export type MechanicsTeachingScene = {
+  scene_id: string;
+  title: string;
+  canvas: { width: number; height: number; background?: string };
+  actors: Array<{
+    id: string;
+    kind: string;
+    label: string;
+    geometry: Record<string, number>;
+    style: Record<string, string | number>;
+  }>;
+  stages: Array<{
+    id: string;
+    title: string;
+    prompt: string;
+    focus: string[];
+    duration: number;
+  }>;
+  annotations: Array<{
+    key: string;
+    stage_id: string;
+    label: string;
+    value: string;
+    emphasis: string;
+  }>;
+  charts: Array<{
+    id: string;
+    label: string;
+    unit: string;
+    points: Array<{ x: number; y: number }>;
+  }>;
+  lesson_panels: Array<{
+    stage_id: string;
+    headline: string;
+    question: string;
+    takeaway: string;
+    bullets: string[];
+  }>;
+  controls: Array<{ id: string; label: string; kind: string }>;
+  playback_steps: Array<{ stage_id: string; checkpoint: number; headline: string }>;
+};
+
+export type MechanicsRuntimeFrame = {
+  progress: number;
+  actors: Record<string, Record<string, string | number>>;
+  overlays: Record<string, string | number>;
+  annotations: Array<{ key: string; label: string; value: string; emphasis: string }>;
+  chart_series: MechanicsTeachingScene["charts"];
+};
+
 export type MechanicsRecognitionPayload = {
   session_id: string;
   created_at: string;
@@ -181,9 +231,32 @@ export type MechanicsRecognitionPayload = {
   needs_confirmation: boolean;
   confidence_breakdown: Record<string, number>;
   issues: Array<{ id: string; level: "warning" | "error"; message: string; target?: string }>;
+  harness?: Record<string, unknown>;
+  executor_run?: {
+    executor: string;
+    tool_trace: Array<{ tool: string; summary: string; artifact_key: string }>;
+    intermediate_artifacts: Record<string, unknown>;
+    runtime_warnings?: Array<{ code: string; message: string }>;
+  };
+  verification_report?: Record<string, unknown>;
+  final_simulation_spec?: MechanicsSimulation;
+  execution_mode?: string;
 };
 
-const API_ROOT = "http://127.0.0.1:8000/api";
+export type MechanicsScenePayload = {
+  scene: MechanicsTeachingScene;
+  verification_report: Record<string, unknown>;
+  final_simulation_spec: MechanicsSimulation;
+};
+
+export type MechanicsRuntimePayload = {
+  scene: MechanicsTeachingScene;
+  stage: MechanicsTeachingScene["stages"][number];
+  frame: MechanicsRuntimeFrame;
+  verification_report: Record<string, unknown>;
+};
+
+const API_ROOT = "/api";
 
 export async function fetchSamples(): Promise<
   Array<{ id: string; title: string; status: string }>
@@ -303,6 +376,33 @@ export async function confirmMechanicsProblem(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ updates })
+  });
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+  return response.json();
+}
+
+export async function generateMechanicsScene(
+  sessionId: string
+): Promise<MechanicsScenePayload> {
+  const response = await fetch(`${API_ROOT}/mechanics/${sessionId}/generate-scene`, {
+    method: "POST"
+  });
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+  return response.json();
+}
+
+export async function simulateMechanicsScene(
+  sessionId: string,
+  payload: { stageId: string; progress: number }
+): Promise<MechanicsRuntimePayload> {
+  const response = await fetch(`${API_ROOT}/mechanics/${sessionId}/simulate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ stage_id: payload.stageId, progress: payload.progress })
   });
   if (!response.ok) {
     throw new Error(await response.text());

@@ -1,920 +1,494 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Figure1Payload,
-  Figure1Scene,
-  Figure1SceneComponent,
-  Figure1Simulation,
-  Figure1State,
-  ImagePreview,
   MechanicsRecognitionPayload,
-  RecognitionPayload,
-  SceneWire,
-  applyFigure1Edit,
+  MechanicsRuntimePayload,
+  MechanicsScenePayload,
   confirmMechanicsProblem,
-  confirmRecognizedScene,
-  fetchFigure1Scene,
-  fetchSamples,
-  importSceneBundle,
+  generateMechanicsScene,
   recognizeMechanicsProblem,
-  recognizeCircuitImage,
-  simulateFigure1
+  simulateMechanicsScene
 } from "./lib/api";
 
-function sliderHandleX(rheostat: Figure1SceneComponent | undefined, ratio: number) {
-  if (!rheostat) {
-    return 0;
+const SAMPLE_PROBLEM = `17. 某兴趣小组设计了一个传送装置，AB是倾角为30°的斜轨道，BC是以恒定速率v0顺时针转动的水平传送带，靠近C端有半径为R、质量为M置于光滑水平面上的可动半圆弧轨道。现有一质量为m的物块，从AB上距B点L的P点由静止下滑，经传送带末端C点滑入圆弧轨道。物块与传送带间的动摩擦因数为μ，其余接触面均光滑。已知R=0.36m，L=1.6m，v0=5m/s，m=0.2kg，M=1.8kg，μ=0.25。求物块滑到B点处的速度大小、从B运动到C过程中摩擦力对其做的功、在传送带上滑动过程中产生的滑痕长度、即将离开圆弧轨道最高点的瞬间受到轨道的压力大小。`;
+
+const SAMPLE_SOLUTION = `滑块由P点到B点由动能定理得 mgsin30°L = 1/2 mv^2，解得 v=4m/s。物块滑上传送带后做匀加速运动直至与传送带共速，摩擦力对其做功 Wf = 1/2 mv0^2 - 1/2 mv^2 = 0.9J。加速度为 a=μg=2.5m/s^2，加速时间 t=(v0-v)/a=0.4s，滑痕长度 Δx=v0 t - (v0+v)t/2 = 0.2m。物块开始进入圆弧轨道到到达即将最高点由水平方向动量守恒和机械能守恒可知，1/2 mv0^2 = 1/2 mv1^2 + 1/2 Mv2^2 + 2mgR，解得 v1=0.8m/s。对滑块在最高点由牛顿第二定律得 F+mg = m(v1-v2)^2/R，解得 F=3N。`;
+
+const SAMPLE_ANSWERS = "4m/s;0.9J;0.2m;3N";
+
+function stageEmoji(stageId: string) {
+  switch (stageId) {
+    case "slope":
+      return "A";
+    case "belt":
+      return "B";
+    case "arc_entry":
+      return "C";
+    case "arc_top":
+      return "D";
+    default:
+      return "·";
   }
-  const left = rheostat.ports.find((port) => port.id === "left");
-  const right = rheostat.ports.find((port) => port.id === "right");
-  if (!left || !right) {
-    return rheostat.x + rheostat.width * ratio;
+}
+
+function chartPath(points: Array<{ x: number; y: number }>, width: number, height: number) {
+  if (points.length === 0) {
+    return "";
   }
-  return left.x + (right.x - left.x) * ratio;
+  const xMin = Math.min(...points.map((point) => point.x));
+  const xMax = Math.max(...points.map((point) => point.x));
+  const yMin = Math.min(...points.map((point) => point.y));
+  const yMax = Math.max(...points.map((point) => point.y));
+  return points
+    .map((point, index) => {
+      const x = ((point.x - xMin) / Math.max(xMax - xMin, 1e-6)) * width;
+      const y = height - ((point.y - yMin) / Math.max(yMax - yMin, 1e-6)) * height;
+      return `${index === 0 ? "M" : "L"} ${x.toFixed(2)} ${y.toFixed(2)}`;
+    })
+    .join(" ");
 }
 
-function meterAngle(value: number, maxValue: number) {
-  const normalized = Math.min(Math.max(value / Math.max(maxValue, 1e-6), 0), 1);
-  return -120 + normalized * 120;
-}
+function TeachingScene({
+  scene,
+  runtime
+}: {
+  scene: MechanicsScenePayload["scene"];
+  runtime: MechanicsRuntimePayload | null;
+}) {
+  const block = runtime?.frame.actors.block;
+  const belt = runtime?.frame.actors.belt;
+  const arc = runtime?.frame.actors.arc;
+  const overlayEntries = Object.entries(runtime?.frame.overlays ?? {});
+  const currentStage = runtime?.stage.id ?? scene.stages[0]?.id;
 
-function rotatePointer(cx: number, cy: number, angle: number) {
-  return `rotate(${angle} ${cx} ${cy})`;
-}
-
-function buildPortMap(scene: Figure1Scene) {
-  const map = new Map<string, { x: number; y: number }>();
-  scene.components.forEach((component) => {
-    if (component.type === "junction") {
-      map.set(component.id, { x: component.x, y: component.y });
-    }
-    component.ports.forEach((port) => {
-      map.set(`${component.id}.${port.id}`, { x: port.x, y: port.y });
-    });
-  });
-  return map;
-}
-
-function getPort(scene: Figure1Scene, ref: string) {
-  const map = buildPortMap(scene);
-  return map.get(ref);
-}
-
-function resolveWirePoints(scene: Figure1Scene, wire: SceneWire) {
-  const portMap = buildPortMap(scene);
-  return [portMap.get(wire.start_ref), ...wire.bends, portMap.get(wire.end_ref)].filter(
-    Boolean
-  ) as Array<{ x: number; y: number }>;
-}
-
-function renderImagePreview(preview: ImagePreview) {
-  if ("svg" in preview && preview.svg) {
-    return (
-      <div className="reference-preview" dangerouslySetInnerHTML={{ __html: preview.svg }} />
-    );
-  }
   return (
-    <div className="reference-preview">
-      <img src={preview.data_url} alt="识别输入" className="uploaded-preview" />
+    <div className="theater-shell">
+      <div className="theater-caption">
+        <div>
+          <p className="panel-kicker">Teaching Simulation</p>
+          <h2>{scene.title}</h2>
+        </div>
+        <div className="overlay-pills">
+          {overlayEntries.slice(0, 3).map(([key, value]) => (
+            <span key={key}>{String(value)}</span>
+          ))}
+        </div>
+      </div>
+      <svg className="teaching-canvas" viewBox={`0 0 ${scene.canvas.width} ${scene.canvas.height}`}>
+        <defs>
+          <linearGradient id="deckGlow" x1="0%" x2="100%">
+            <stop offset="0%" stopColor="#ffecd1" />
+            <stop offset="100%" stopColor="#ffd166" />
+          </linearGradient>
+          <linearGradient id="arcGlow" x1="0%" x2="100%">
+            <stop offset="0%" stopColor="#0f766e" />
+            <stop offset="100%" stopColor="#5eead4" />
+          </linearGradient>
+        </defs>
+        <rect width={scene.canvas.width} height={scene.canvas.height} rx="36" fill="#fffdf7" />
+        <path d="M 76 146 L 332 286" stroke={currentStage === "slope" ? "#d1495b" : "#111827"} strokeWidth="8" fill="none" strokeLinecap="round" />
+        <rect x="332" y="286" width="324" height="42" rx="20" fill="url(#deckGlow)" stroke="#111827" strokeWidth="6" />
+        <path d="M 796 286 A 122 122 0 0 1 796 42" stroke="url(#arcGlow)" strokeWidth="8" fill="none" strokeLinecap="round" />
+        <circle
+          cx={Number(block?.x ?? 84)}
+          cy={Number(block?.y ?? 152)}
+          r="18"
+          fill="#d1495b"
+          stroke="#111827"
+          strokeWidth="4"
+        />
+        <circle cx={796} cy={286} r="7" fill="#0f766e" />
+        <circle cx={Number(arc?.cx ?? 796)} cy="286" r="12" fill="#0f766e" opacity="0.18" />
+        <text x="110" y="130" className="canvas-label">AB</text>
+        <text x="470" y="274" className="canvas-label">BC</text>
+        <text x="828" y="126" className="canvas-label">R</text>
+        <text x="394" y="354" className="canvas-metric">
+          传送带偏移 {Number(belt?.offset ?? 0).toFixed(1)}
+        </text>
+        {currentStage === "arc_top" ? (
+          <>
+            <line x1="796" y1="164" x2="796" y2="104" stroke="#2563eb" strokeWidth="5" />
+            <line x1="796" y1="164" x2="796" y2="228" stroke="#111827" strokeWidth="5" />
+            <text x="812" y="110" className="canvas-force">F</text>
+            <text x="812" y="232" className="canvas-force">mg</text>
+          </>
+        ) : null}
+      </svg>
+      <div className="annotation-strip">
+        {(runtime?.frame.annotations ?? []).map((item) => (
+          <article key={item.key} className={`annotation-chip annotation-${item.emphasis}`}>
+            <span>{item.label}</span>
+            <strong>{item.value}</strong>
+          </article>
+        ))}
+      </div>
     </div>
   );
 }
 
-type StageProps = {
-  scene: Figure1Scene;
-  state: Figure1State;
-  simulation: Figure1Simulation;
-  showDebugOverlay: boolean;
-  onToggleSwitch: () => void;
-  onSliderPointerDown: () => void;
-};
-
-function CircuitStage({
+function LessonRail({
   scene,
-  state,
-  simulation,
-  showDebugOverlay,
-  onToggleSwitch,
-  onSliderPointerDown
-}: StageProps) {
-  const highlighted = new Set(simulation.visual_state.highlighted_wires);
-  const activeComponents = scene.components.filter((component) => component.enabled !== false);
-  const resistors = activeComponents.filter((component) => component.type === "resistor");
-  const rheostat = activeComponents.find((component) => component.type === "rheostat");
-  const battery = activeComponents.find((component) => component.type === "battery");
-  const switchComponent = activeComponents.find((component) => component.type === "switch");
-  const lamps = activeComponents.filter((component) => component.type === "lamp");
-  const ammeters = activeComponents.filter((component) => component.type === "ammeter");
-  const voltmeters = activeComponents.filter((component) => component.type === "voltmeter");
-  const sliderX = sliderHandleX(rheostat, state.rheostat_ratio);
-
-  const switchPivot = getPort(scene, `${switchComponent?.id ?? "switch"}.pivot`);
-  const switchTop = getPort(scene, `${switchComponent?.id ?? "switch"}.top`);
-  const switchBottom = getPort(scene, `${switchComponent?.id ?? "switch"}.bottom`);
-  const switchOpen = getPort(scene, `${switchComponent?.id ?? "switch"}.open_contact`);
-  const switchClosed = getPort(scene, `${switchComponent?.id ?? "switch"}.closed_contact`);
-  const batteryLeft = getPort(scene, `${battery?.id ?? "battery"}.left`);
-  const batteryRight = getPort(scene, `${battery?.id ?? "battery"}.right`);
-  const batteryCenterY = batteryLeft?.y ?? batteryRight?.y ?? (battery?.y ?? 600) + 40;
-  const shortOffset = Number(battery?.metadata?.short_plate_offset ?? "42");
-  const longOffset = Number(battery?.metadata?.long_plate_offset ?? "82");
-  const batteryPlateX1 = (batteryLeft?.x ?? (battery?.x ?? 180)) + shortOffset;
-  const batteryPlateX2 = (batteryLeft?.x ?? (battery?.x ?? 180)) + longOffset;
-
+  runtime,
+  stageId,
+  onSelectStage
+}: {
+  scene: MechanicsScenePayload["scene"];
+  runtime: MechanicsRuntimePayload | null;
+  stageId: string;
+  onSelectStage: (stageId: string) => void;
+}) {
+  const panel = scene.lesson_panels.find((item) => item.stage_id === stageId) ?? scene.lesson_panels[0];
   return (
-    <svg
-      className="circuit-stage"
-      viewBox={`0 0 ${scene.canvas.width} ${scene.canvas.height}`}
-      role="img"
-      aria-label="电路 simulation 舞台"
-    >
-      <rect width={scene.canvas.width} height={scene.canvas.height} fill="#fffef9" rx="30" />
+    <aside className="lesson-rail">
+      <section className="rail-card">
+        <p className="panel-kicker">Stages</p>
+        <div className="stage-stack">
+          {scene.stages.map((stage) => (
+            <button
+              key={stage.id}
+              className={stage.id === stageId ? "stage-pill stage-pill-active" : "stage-pill"}
+              onClick={() => onSelectStage(stage.id)}
+            >
+              <span className="stage-index">{stageEmoji(stage.id)}</span>
+              <span>
+                <strong>{stage.title}</strong>
+                <small>{stage.prompt}</small>
+              </span>
+            </button>
+          ))}
+        </div>
+      </section>
+      <section className="rail-card rail-card-lesson">
+        <p className="panel-kicker">Lesson Panel</p>
+        <h3>{panel?.headline}</h3>
+        <p className="lesson-question">{panel?.question}</p>
+        <p className="lesson-takeaway">{panel?.takeaway}</p>
+        <ul className="lesson-points">
+          {(panel?.bullets ?? []).map((bullet) => (
+            <li key={bullet}>{bullet}</li>
+          ))}
+        </ul>
+      </section>
+      <section className="rail-card">
+        <p className="panel-kicker">Live Checks</p>
+        <div className="rail-metrics">
+          <div>
+            <span>Stage</span>
+            <strong>{runtime?.stage.title ?? scene.stages[0]?.title}</strong>
+          </div>
+          <div>
+            <span>Progress</span>
+            <strong>{Math.round((runtime?.frame.progress ?? 0) * 100)}%</strong>
+          </div>
+          <div>
+            <span>Belt Speed</span>
+            <strong>{String(runtime?.frame.overlays.belt_speed ?? "5 m/s")}</strong>
+          </div>
+        </div>
+      </section>
+    </aside>
+  );
+}
 
-      {scene.wires.map((wire) => {
-        const points = resolveWirePoints(scene, wire);
-        if (points.length < 2) {
-          return null;
-        }
-        return (
-          <polyline
-            key={wire.id}
-            points={points.map((point) => `${point.x},${point.y}`).join(" ")}
-            fill="none"
-            stroke={highlighted.has(wire.id) ? "#f97316" : "#111827"}
-            strokeWidth={highlighted.has(wire.id) ? 8 : 6}
-            strokeLinejoin="round"
-            strokeLinecap="round"
-          />
-        );
-      })}
-
-      {activeComponents
-        .filter((component) => component.type === "junction")
-        .map((component) => (
-          <circle
-            key={component.id}
-            cx={component.x}
-            cy={component.y}
-            r={8}
-            fill={simulation.visual_state.energized ? "#f97316" : "#111827"}
-          />
-        ))}
-
-      {switchComponent ? (
-        <g
-          className="switch-hitbox"
-          onClick={onToggleSwitch}
-          role="button"
-          tabIndex={0}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" || event.key === " ") {
-              event.preventDefault();
-              onToggleSwitch();
-            }
-          }}
-        >
-          <circle
-            cx={switchPivot?.x ?? switchComponent.x + switchComponent.width / 2}
-            cy={switchPivot?.y ?? switchComponent.y + switchComponent.height / 2}
-            r="14"
-            fill="#ffffff"
-            stroke="#111827"
-            strokeWidth="6"
-          />
-          <line
-            x1={switchBottom?.x ?? switchComponent.x + switchComponent.width / 2}
-            y1={switchBottom?.y ?? switchComponent.y + switchComponent.height}
-            x2={switchTop?.x ?? switchComponent.x + switchComponent.width / 2}
-            y2={switchTop?.y ?? switchComponent.y}
-            stroke="#111827"
-            strokeWidth="6"
-          />
-          <line
-            x1={(switchPivot?.x ?? switchComponent.x) + 1}
-            y1={(switchPivot?.y ?? switchComponent.y) - 13}
-            x2={state.switch_closed ? switchClosed?.x ?? switchComponent.x : switchOpen?.x ?? switchComponent.x - 48}
-            y2={state.switch_closed ? switchClosed?.y ?? switchComponent.y : switchOpen?.y ?? switchComponent.y + 48}
-            stroke={state.switch_closed ? "#f97316" : "#111827"}
-            strokeWidth="6"
-            strokeLinecap="round"
-          />
-        </g>
-      ) : null}
-
-      {battery ? (
-        <g>
-          <line
-            x1={batteryPlateX1}
-            y1={batteryCenterY - 40}
-            x2={batteryPlateX1}
-            y2={batteryCenterY + 40}
-            stroke="#111827"
-            strokeWidth="6"
-          />
-          <line
-            x1={batteryPlateX2}
-            y1={batteryCenterY - 58}
-            x2={batteryPlateX2}
-            y2={batteryCenterY + 58}
-            stroke="#111827"
-            strokeWidth="6"
-          />
-          <line
-            x1={batteryLeft?.x ?? battery.x}
-            y1={batteryCenterY}
-            x2={batteryPlateX1}
-            y2={batteryCenterY}
-            stroke="#111827"
-            strokeWidth="6"
-            strokeLinecap="round"
-          />
-          <line
-            x1={batteryPlateX2}
-            y1={batteryCenterY}
-            x2={batteryRight?.x ?? battery.x + battery.width}
-            y2={batteryCenterY}
-            stroke="#111827"
-            strokeWidth="6"
-            strokeLinecap="round"
-          />
-        </g>
-      ) : null}
-
-      {resistors.map((component) => (
-        <g key={component.id}>
-          <rect
-            x={component.x}
-            y={component.y}
-            width={component.width}
-            height={component.height}
-            fill="#ffffff"
-            stroke="#111827"
-            strokeWidth="6"
-          />
-          <text x={component.x + component.width / 2 - 8} y={component.y + component.height + 86} className="stage-label stage-label-resistor">
-            {component.label ?? "R"}
-          </text>
-        </g>
+function Charts({
+  runtime
+}: {
+  runtime: MechanicsRuntimePayload | null;
+}) {
+  const charts = runtime?.frame.chart_series ?? [];
+  return (
+    <section className="charts-grid">
+      {charts.map((chart) => (
+        <article key={chart.id} className="chart-card">
+          <div className="chart-head">
+            <div>
+              <p className="panel-kicker">Linked Chart</p>
+              <h3>{chart.label}</h3>
+            </div>
+            <span>{chart.unit}</span>
+          </div>
+          <svg viewBox="0 0 240 120" className="chart-svg">
+            <rect x="0" y="0" width="240" height="120" rx="18" fill="#fff9ef" />
+            <path d={chartPath(chart.points, 220, 92)} transform="translate(10 14)" fill="none" stroke="#d1495b" strokeWidth="4" />
+          </svg>
+        </article>
       ))}
-
-      {rheostat ? (
-        <g>
-          <rect
-            x={rheostat.x}
-            y={rheostat.y}
-            width={rheostat.width}
-            height={rheostat.height}
-            fill="#ffffff"
-            stroke="#111827"
-            strokeWidth="6"
-          />
-          <line
-            x1={sliderX}
-            y1={rheostat.y - 80}
-            x2={sliderX}
-            y2={rheostat.y}
-            stroke="#111827"
-            strokeWidth="6"
-          />
-          <circle
-            className="slider-handle"
-            cx={sliderX}
-            cy={rheostat.y - 18}
-            r="16"
-            fill="#f97316"
-            stroke="#111827"
-            strokeWidth="4"
-            onPointerDown={onSliderPointerDown}
-          />
-          <text x={rheostat.x - 26} y={rheostat.y - 34} className="stage-label stage-label-rheostat">
-            {rheostat.label ?? "P"}
-          </text>
-        </g>
-      ) : null}
-
-      {lamps.map((component) => (
-        <g key={component.id}>
-          <circle
-            cx={component.x + component.width / 2}
-            cy={component.y + component.height / 2}
-            r={component.width / 2}
-            fill="#ffffff"
-            stroke="#111827"
-            strokeWidth="6"
-          />
-          <line
-            x1={component.x + component.width * 0.25}
-            y1={component.y + component.height * 0.25}
-            x2={component.x + component.width * 0.75}
-            y2={component.y + component.height * 0.75}
-            stroke="#111827"
-            strokeWidth="4"
-          />
-          <line
-            x1={component.x + component.width * 0.75}
-            y1={component.y + component.height * 0.25}
-            x2={component.x + component.width * 0.25}
-            y2={component.y + component.height * 0.75}
-            stroke="#111827"
-            strokeWidth="4"
-          />
-          <text x={component.x + component.width + 8} y={component.y - 4} className="stage-label">
-            {component.label ?? "L"}
-          </text>
-        </g>
-      ))}
-
-      {voltmeters.map((component, index) => (
-        <g key={component.id}>
-          <circle
-            cx={component.x + component.width / 2}
-            cy={component.y + component.height / 2}
-            r={component.width / 2}
-            fill="#ffffff"
-            stroke="#111827"
-            strokeWidth="8"
-          />
-          <line
-            x1={component.x + component.width / 2}
-            y1={component.y + component.height / 2}
-            x2={component.x + component.width / 2}
-            y2={component.y + 34}
-            stroke="#111827"
-            strokeWidth="4"
-            transform={rotatePointer(
-              component.x + component.width / 2,
-              component.y + component.height / 2,
-              meterAngle(simulation.meter_results.voltmeter, Math.max(state.battery_voltage, 1))
-            )}
-          />
-          <text x={component.x + component.width / 2 - 16} y={component.y + component.height / 2 + 16} className="stage-meter-symbol">
-            V
-          </text>
-          {index === 0 ? (
-            <text x={component.x - 6} y={component.y + component.height + 26} className="stage-meter-value">
-              {simulation.meter_results.voltmeter.toFixed(2)} V
-            </text>
-          ) : null}
-        </g>
-      ))}
-
-      {ammeters.map((component, index) => (
-        <g key={component.id}>
-          <circle
-            cx={component.x + component.width / 2}
-            cy={component.y + component.height / 2}
-            r={component.width / 2}
-            fill="#ffffff"
-            stroke="#111827"
-            strokeWidth="8"
-          />
-          <line
-            x1={component.x + component.width / 2}
-            y1={component.y + component.height / 2}
-            x2={component.x + component.width / 2}
-            y2={component.y + 30}
-            stroke="#111827"
-            strokeWidth="4"
-            transform={rotatePointer(
-              component.x + component.width / 2,
-              component.y + component.height / 2,
-              meterAngle(simulation.meter_results.ammeter, 1)
-            )}
-          />
-          <text x={component.x + component.width / 2 - 14} y={component.y + component.height / 2 + 14} className="stage-meter-symbol">
-            A
-          </text>
-          {index === 0 ? (
-            <text x={component.x - 8} y={component.y + component.height + 26} className="stage-meter-value">
-              {simulation.meter_results.ammeter.toFixed(2)} A
-            </text>
-          ) : null}
-        </g>
-      ))}
-
-      {showDebugOverlay
-        ? activeComponents.flatMap((component) =>
-            component.ports.map((port) => (
-              <g key={`${component.id}-${port.id}`}>
-                <circle cx={port.x} cy={port.y} r={6} fill="#0ea5e9" />
-                <text x={port.x + 8} y={port.y - 8} className="debug-label">
-                  {component.id}.{port.id}
-                </text>
-              </g>
-            ))
-          )
-        : null}
-    </svg>
+    </section>
   );
 }
 
 export function App() {
-  const [samples, setSamples] = useState<Array<{ id: string; title: string; status: string }>>([]);
-  const [payload, setPayload] = useState<Figure1Payload | null>(null);
-  const [scene, setScene] = useState<Figure1Scene | null>(null);
-  const [state, setState] = useState<Figure1State | null>(null);
-  const [simulation, setSimulation] = useState<Figure1Simulation | null>(null);
-  const [pendingRecognition, setPendingRecognition] = useState<RecognitionPayload | null>(null);
-  const [mechanicsSession, setMechanicsSession] = useState<MechanicsRecognitionPayload | null>(null);
-  const [pendingComponentEdits, setPendingComponentEdits] = useState<Record<string, { id: string; type?: string; value?: number; enabled?: boolean }>>({});
-  const [mechanicsProblemText, setMechanicsProblemText] = useState("");
-  const [mechanicsSolutionText, setMechanicsSolutionText] = useState("");
-  const [mechanicsFinalAnswers, setMechanicsFinalAnswers] = useState("");
-  const [mechanicsImage, setMechanicsImage] = useState<File | null>(null);
-  const [jsonBundleInput, setJsonBundleInput] = useState<string>("");
-  const [loading, setLoading] = useState(true);
-  const [isDragging, setIsDragging] = useState(false);
-  const [showDebugOverlay, setShowDebugOverlay] = useState(true);
-  const [error, setError] = useState<string>("");
-  const stageWrapRef = useRef<HTMLDivElement | null>(null);
+  const [problemText, setProblemText] = useState(SAMPLE_PROBLEM);
+  const [solutionText, setSolutionText] = useState(SAMPLE_SOLUTION);
+  const [finalAnswers, setFinalAnswers] = useState(SAMPLE_ANSWERS);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [session, setSession] = useState<MechanicsRecognitionPayload | null>(null);
+  const [scenePayload, setScenePayload] = useState<MechanicsScenePayload | null>(null);
+  const [runtime, setRuntime] = useState<MechanicsRuntimePayload | null>(null);
+  const [selectedStage, setSelectedStage] = useState("slope");
+  const [progress, setProgress] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [isPlaying, setIsPlaying] = useState(false);
+  const playbackRef = useRef<number | null>(null);
 
-  useEffect(() => {
-    fetchSamples().then(setSamples);
-    fetchFigure1Scene()
-      .then((result) => {
-        setPayload(result);
-        setScene(result.scene);
-        setState(result.state);
-        setSimulation(result.simulation);
-      })
-      .catch((reason) => {
-        setError(String(reason));
-      })
-      .finally(() => setLoading(false));
-  }, []);
+  const answerCards = useMemo(() => {
+    if (!session?.simulation) {
+      return [];
+    }
+    return Object.values(session.simulation.answers);
+  }, [session]);
 
-  useEffect(() => {
-    if (!scene || !state || pendingRecognition) {
+  async function refreshRuntime(nextStage = selectedStage, nextProgress = progress) {
+    if (!session) {
       return;
     }
-    const handle = window.setTimeout(() => {
-      simulateFigure1(scene, state)
-        .then((result) => setSimulation(result))
-        .catch((reason) => setError(String(reason)));
-    }, isDragging ? 30 : 120);
-    return () => window.clearTimeout(handle);
-  }, [scene, state, isDragging, pendingRecognition]);
-
-  useEffect(() => {
-    if (!isDragging || !scene) {
-      return;
-    }
-    const rheostat = scene.components.find((component) => component.type === "rheostat");
-    if (!rheostat) {
-      return;
-    }
-    const move = (event: PointerEvent) => {
-      const wrap = stageWrapRef.current;
-      if (!wrap) {
-        return;
-      }
-      const svg = wrap.querySelector("svg");
-      if (!svg) {
-        return;
-      }
-      const bounds = svg.getBoundingClientRect();
-      const ratio = Math.min(Math.max((event.clientX - bounds.left) / bounds.width, 0), 1);
-      setState((current) => (current ? { ...current, rheostat_ratio: ratio } : current));
-    };
-    const up = () => setIsDragging(false);
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
-    return () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-    };
-  }, [isDragging, scene]);
-
-  const updateNumber = (field: keyof Figure1State, value: string) => {
-    const numeric = Number(value);
-    setState((current) => (current ? { ...current, [field]: numeric } : current));
-  };
-
-  const toggleComponent = async (componentId: string, enabled: boolean) => {
-    if (!scene || !state) {
-      return;
-    }
-    const result = await applyFigure1Edit(scene, state, {
-      action: enabled ? "restore_component" : "remove_component",
-      component_id: componentId
+    const payload = await simulateMechanicsScene(session.session_id, {
+      stageId: nextStage,
+      progress: nextProgress
     });
-    setScene(result.scene);
-    setState(result.state);
-    setSimulation(result.simulation);
-  };
-
-  const onUpload = async (file: File | null) => {
-    if (!file) {
-      return;
-    }
-    setError("");
-    setPendingComponentEdits({});
-    try {
-      const result = await recognizeCircuitImage(file);
-      setPendingRecognition(result);
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
-    }
-  };
-
-  const applyRecognition = async () => {
-    if (!pendingRecognition) {
-      return;
-    }
-    try {
-      const updates = {
-        component_updates: Object.values(pendingComponentEdits),
-        state_updates: [{ key: "switch_closed", value: true }]
-      };
-      const confirmed = await confirmRecognizedScene(pendingRecognition.session_id, updates);
-      setPayload({
-        reference_image: pendingRecognition.reference_image,
-        scene: confirmed.scene,
-        state: confirmed.state,
-        simulation: confirmed.simulation
-      });
-      setScene(confirmed.scene);
-      setState(confirmed.state);
-      setSimulation(confirmed.simulation);
-      setPendingRecognition(null);
-      setPendingComponentEdits({});
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
-    }
-  };
-
-  const importJsonBundle = async () => {
-    if (!jsonBundleInput.trim()) {
-      setError("请先粘贴 JSON。");
-      return;
-    }
-    setError("");
-    try {
-      const parsed = JSON.parse(jsonBundleInput);
-      const imported = await importSceneBundle(parsed.scene ? parsed : { scene: parsed });
-      setPayload({
-        reference_image: { id: "manual-json-import", svg: "<svg xmlns='http://www.w3.org/2000/svg'></svg>" },
-        scene: imported.scene,
-        state: imported.state,
-        simulation: imported.simulation
-      });
-      setScene(imported.scene);
-      setState(imported.state);
-      setSimulation(imported.simulation);
-      setPendingRecognition(null);
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
-    }
-  };
-
-  const submitMechanicsProblem = async () => {
-    if (!mechanicsProblemText.trim() && !mechanicsImage) {
-      setError("请至少提供力学题题干文本或截图。");
-      return;
-    }
-    setError("");
-    try {
-      const result = await recognizeMechanicsProblem({
-        problemText: mechanicsProblemText,
-        solutionText: mechanicsSolutionText,
-        finalAnswers: mechanicsFinalAnswers,
-        imageFile: mechanicsImage
-      });
-      setMechanicsSession(result);
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
-    }
-  };
-
-  const applyMechanicsSelection = async (modelId: string) => {
-    if (!mechanicsSession) {
-      return;
-    }
-    try {
-      const result = await confirmMechanicsProblem(mechanicsSession.session_id, {
-        selected_model_id: modelId,
-        assumption_overrides: modelId === "belt_arc_consistent" ? { belt_reaches_speed: true } : undefined
-      });
-      setMechanicsSession(result);
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
-    }
-  };
-
-  const currentPreview = pendingRecognition?.reference_image ?? payload?.reference_image;
-  const removableComponents = useMemo(
-    () => (scene ? scene.components.filter((component) => component.capabilities.removable) : []),
-    [scene]
-  );
-
-  if (loading) {
-    return <main className="loading-shell">正在加载图 1 simulation...</main>;
+    setRuntime(payload);
   }
 
-  if (!scene || !state || !simulation || !payload) {
-    return (
-      <main className="loading-shell">
-        <div>
-          <p>页面初始化失败，请确认前后端服务都已启动。</p>
-          {error ? <pre className="error-text">{error}</pre> : null}
-          <button onClick={() => window.location.reload()}>重试加载</button>
-        </div>
-      </main>
-    );
+  async function handleGenerate() {
+    try {
+      setLoading(true);
+      setError("");
+      setIsPlaying(false);
+      const recognized = await recognizeMechanicsProblem({
+        problemText,
+        solutionText,
+        finalAnswers,
+        imageFile
+      });
+      setSession(recognized);
+      const generatedScene = await generateMechanicsScene(recognized.session_id);
+      setScenePayload(generatedScene);
+      const initialStage = generatedScene.scene.stages[0]?.id ?? "slope";
+      setSelectedStage(initialStage);
+      setProgress(0);
+      const firstFrame = await simulateMechanicsScene(recognized.session_id, {
+        stageId: initialStage,
+        progress: 0
+      });
+      setRuntime(firstFrame);
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : String(requestError));
+    } finally {
+      setLoading(false);
+    }
   }
+
+  async function handleConfirm() {
+    if (!session) {
+      return;
+    }
+    try {
+      setLoading(true);
+      const confirmed = await confirmMechanicsProblem(session.session_id, {
+        selected_model_id: session.selected_model?.id
+      });
+      setSession(confirmed);
+      const generatedScene = await generateMechanicsScene(confirmed.session_id);
+      setScenePayload(generatedScene);
+      await refreshRuntime(selectedStage, progress);
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : String(requestError));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!isPlaying || !session) {
+      return;
+    }
+    playbackRef.current = window.setInterval(() => {
+      setProgress((current) => {
+        const next = current + 0.08;
+        if (next >= 1) {
+          setIsPlaying(false);
+          return 1;
+        }
+        return next;
+      });
+    }, 220);
+    return () => {
+      if (playbackRef.current) {
+        window.clearInterval(playbackRef.current);
+      }
+    };
+  }, [isPlaying, session]);
+
+  useEffect(() => {
+    if (!session || !scenePayload) {
+      return;
+    }
+    refreshRuntime(selectedStage, progress).catch((requestError) => {
+      setError(requestError instanceof Error ? requestError.message : String(requestError));
+    });
+  }, [selectedStage, progress]);
+
+  const currentStage = scenePayload?.scene.stages.find((item) => item.id === selectedStage);
 
   return (
-    <main className="sim-app">
-      <header className="sim-hero">
+    <main className="workbench-shell">
+      <header className="hero-band">
         <div>
-          <p className="sim-kicker">Figure 1 + Recognition V2</p>
-          <h1>图 1 闭合修复 + 未知干净电路图识别确认</h1>
-          <p className="sim-description">
-            舞台连线由端口驱动并做闭合校验；上传未知电路图后先进入确认流程，再应用到可交互 simulation。
+          <p className="hero-kicker">Problem → Harness → Teaching Simulation</p>
+          <h1>教师工作台</h1>
+          <p className="hero-copy">
+            GAI 负责抽取物理模型，harness 负责约束、校验、scene 编译与讲解 runtime。上传题干与解析后，平台直接生成可讲解的力学仿真。
           </p>
         </div>
-        <div className="sample-summary">
-          {samples.map((sample) => (
-            <span key={sample.id} className={`sample-tag ${sample.status === "ready" ? "sample-tag-live" : ""}`}>
-              {sample.title}
-            </span>
-          ))}
+        <div className="hero-status">
+          <span>{session?.execution_mode ?? "dev_proxy"}</span>
+          <strong>{session?.selected_model?.title ?? "等待生成"}</strong>
         </div>
       </header>
 
-      <section className="sim-layout">
-        <div className="stage-card">
-          <div className="stage-toolbar">
+      <section className="composer-grid">
+        <article className="composer-card composer-card-wide">
+          <div className="card-head">
             <div>
-              <h2>电路舞台</h2>
-              <p>端口、节点、导线端点可追溯；调试叠加层默认开启便于检查闭合。</p>
+              <p className="panel-kicker">Inputs</p>
+              <h2>题目与解析</h2>
             </div>
-            <div className="toolbar-actions">
-              <label className="debug-toggle">
-                <input
-                  type="checkbox"
-                  checked={showDebugOverlay}
-                  onChange={(event) => setShowDebugOverlay(event.target.checked)}
-                />
-                显示端口
-              </label>
-              <button onClick={() => setState((current) => current && { ...current, switch_closed: !current.switch_closed })}>
-                {state.switch_closed ? "断开开关" : "闭合开关"}
+            <button className="primary-button" onClick={handleGenerate} disabled={loading}>
+              {loading ? "生成中..." : "生成 simulation"}
+            </button>
+          </div>
+          <div className="composer-fields">
+            <label>
+              <span>题目文本</span>
+              <textarea value={problemText} onChange={(event) => setProblemText(event.target.value)} />
+            </label>
+            <label>
+              <span>解析文本</span>
+              <textarea value={solutionText} onChange={(event) => setSolutionText(event.target.value)} />
+            </label>
+          </div>
+          <div className="composer-inline">
+            <label>
+              <span>答案串</span>
+              <input value={finalAnswers} onChange={(event) => setFinalAnswers(event.target.value)} />
+            </label>
+            <label>
+              <span>题目截图</span>
+              <input type="file" accept="image/*" onChange={(event) => setImageFile(event.target.files?.[0] ?? null)} />
+            </label>
+          </div>
+          {error ? <p className="error-banner">{error}</p> : null}
+        </article>
+
+        <article className="composer-card">
+          <p className="panel-kicker">Validation</p>
+          <h2>答案对齐</h2>
+          <div className="answer-grid">
+            {answerCards.map((item) => (
+              <div key={item.key} className="answer-card">
+                <span>{item.label}</span>
+                <strong>{item.display_value}</strong>
+              </div>
+            ))}
+          </div>
+          {session?.needs_confirmation ? (
+            <div className="warning-box">
+              <p>当前链路检测到冲突或低置信度，需要教师确认后再放行。</p>
+              <button onClick={handleConfirm} className="secondary-button" disabled={loading}>
+                以当前模型确认
               </button>
             </div>
-          </div>
-          <div className="stage-wrap" ref={stageWrapRef}>
-            <CircuitStage
-              scene={scene}
-              state={state}
-              simulation={simulation}
-              showDebugOverlay={showDebugOverlay}
-              onToggleSwitch={() => setState((current) => current && { ...current, switch_closed: !current.switch_closed })}
-              onSliderPointerDown={() => setIsDragging(true)}
-            />
-          </div>
+          ) : (
+            <div className="confidence-box">
+              <span>校验状态</span>
+              <strong>通过</strong>
+              <small>模型、答案与仿真结果已对齐。</small>
+            </div>
+          )}
+        </article>
+      </section>
+
+      <section className="workbench-grid">
+        <div className="presentation-column">
+          {scenePayload ? <TeachingScene scene={scenePayload.scene} runtime={runtime} /> : <div className="empty-stage">生成后在这里看到讲解型 simulation。</div>}
+          {runtime ? <Charts runtime={runtime} /> : null}
         </div>
 
-        <aside className="control-card">
-          <section className="control-section">
-            <h2>识图上传</h2>
-            <label>
-              上传干净电路图图片
-              <input
-                type="file"
-                accept="image/png,image/jpeg,image/jpg"
-                onChange={(event) => onUpload(event.target.files?.[0] ?? null)}
-              />
-            </label>
-            {pendingRecognition ? (
-              <div className="recognition-review">
-                <p>
-                  识别置信度：<strong>{pendingRecognition.confidence_breakdown.overall.toFixed(2)}</strong>
-                </p>
-                <p>符号检测：{pendingRecognition.confidence_breakdown.symbol_detection.toFixed(2)}，拓扑重建：{pendingRecognition.confidence_breakdown.topology_reconstruction.toFixed(2)}</p>
-                <p>{pendingRecognition.needs_confirmation ? "建议先确认后应用。" : "识别质量较高，可直接应用。"}</p>
-                <button onClick={applyRecognition}>确认并应用到舞台</button>
-              </div>
-            ) : null}
-          </section>
-
-          <section className="control-section">
-            <h2>力学题双证据校验</h2>
-            <label>
-              题目截图
-              <input
-                type="file"
-                accept="image/png,image/jpeg,image/jpg"
-                onChange={(event) => setMechanicsImage(event.target.files?.[0] ?? null)}
-              />
-            </label>
-            <label>
-              题干文本
-              <textarea
-                rows={6}
-                value={mechanicsProblemText}
-                onChange={(event) => setMechanicsProblemText(event.target.value)}
-                placeholder="粘贴题干文本，首版会优先用文本抽模。"
-              />
-            </label>
-            <label>
-              解析文本
-              <textarea
-                rows={6}
-                value={mechanicsSolutionText}
-                onChange={(event) => setMechanicsSolutionText(event.target.value)}
-                placeholder="粘贴教师解析，用作第二份证据。"
-              />
-            </label>
-            <label>
-              参考答案
-              <input
-                type="text"
-                value={mechanicsFinalAnswers}
-                onChange={(event) => setMechanicsFinalAnswers(event.target.value)}
-                placeholder="例如：4m/s;0.9J;0.2m;3N"
-              />
-            </label>
-            <button onClick={submitMechanicsProblem}>识别并校验力学模型</button>
-            {mechanicsSession ? (
-              <div className="recognition-review mechanics-review">
-                <p>
-                  总置信度：<strong>{(mechanicsSession.confidence_breakdown.overall ?? 0).toFixed(2)}</strong>
-                </p>
-                <p>{mechanicsSession.problem_representation.summary}</p>
-                <p>
-                  当前模型：<strong>{mechanicsSession.selected_model.title}</strong>
-                </p>
-                {Object.values(mechanicsSession.simulation.answers).map((answer) => (
-                  <p key={answer.key}>
-                    {answer.label}：<strong>{answer.display_value}</strong>
-                    {answer.expected_value ? ` / 参考 ${answer.expected_value}` : ""}
-                  </p>
-                ))}
-                {mechanicsSession.conflict_items.map((item) => (
-                  <p key={item.id} className="error-text">
-                    [{item.severity}] {item.message}
-                    {item.expected || item.actual
-                      ? `（期望 ${item.expected ?? "-"}，当前 ${item.actual ?? "-"}）`
-                      : ""}
-                  </p>
-                ))}
-                <div className="mechanics-actions">
-                  {mechanicsSession.candidate_models.map((model) => (
-                    <button
-                      key={model.id}
-                      type="button"
-                      onClick={() => applyMechanicsSelection(model.id)}
-                    >
-                      采用 {model.title}
-                    </button>
-                  ))}
-                </div>
-                <details className="debug-panel">
-                  <summary>展开建模细节</summary>
-                  <pre>{JSON.stringify(mechanicsSession, null, 2)}</pre>
-                </details>
-              </div>
-            ) : null}
-          </section>
-
-          <section className="control-section">
-            <h3>JSON 导入</h3>
-            <label>
-              粘贴 <code>scene_bundle.json</code>（支持 <code>{"{scene,state}"}</code> 或直接 <code>scene</code>）
-              <textarea
-                rows={8}
-                value={jsonBundleInput}
-                onChange={(event) => setJsonBundleInput(event.target.value)}
-                placeholder='{"scene": {...}, "state": {...}}'
-              />
-            </label>
-            <button onClick={importJsonBundle}>导入 JSON 并生成 simulation</button>
-          </section>
-
-          {pendingRecognition ? (
-            <section className="control-section">
-              <h3>识别确认</h3>
-              {pendingRecognition.issues.map((issue) => (
-                <p key={issue.id} className="error-text">
-                  [{issue.level}] {issue.message}
-                </p>
-              ))}
-              {pendingRecognition.scene.components
-                .filter((component) => component.type !== "junction")
-                .slice(0, 10)
-                .map((component) => {
-                  const patch = pendingComponentEdits[component.id] ?? { id: component.id };
-                  return (
-                    <div key={component.id} className="toggle-row">
-                      <span>{component.label ?? component.id}</span>
-                      <select
-                        value={patch.type ?? component.type}
-                        onChange={(event) =>
-                          setPendingComponentEdits((current) => ({
-                            ...current,
-                            [component.id]: { ...patch, id: component.id, type: event.target.value }
-                          }))
-                        }
-                      >
-                        {["battery", "switch", "resistor", "lamp", "ammeter", "voltmeter", "rheostat"].map((item) => (
-                          <option key={item} value={item}>
-                            {item}
-                          </option>
-                        ))}
-                      </select>
-                      <input
-                        type="number"
-                        step="0.5"
-                        value={patch.value ?? component.value ?? 10}
-                        onChange={(event) =>
-                          setPendingComponentEdits((current) => ({
-                            ...current,
-                            [component.id]: {
-                              ...patch,
-                              id: component.id,
-                              value: Number(event.target.value)
-                            }
-                          }))
-                        }
-                      />
-                    </div>
-                  );
-                })}
+        {scenePayload ? (
+          <LessonRail
+            scene={scenePayload.scene}
+            runtime={runtime}
+            stageId={selectedStage}
+            onSelectStage={(stageId) => {
+              setSelectedStage(stageId);
+              setProgress(0);
+              setIsPlaying(false);
+            }}
+          />
+        ) : (
+          <aside className="lesson-rail">
+            <section className="rail-card">
+              <p className="panel-kicker">Playback</p>
+              <h3>等待生成</h3>
+              <p>生成后这里会显示阶段切换、讲解要点和联动图表。</p>
             </section>
-          ) : null}
+          </aside>
+        )}
+      </section>
 
-          <section className="control-section">
-            <h3>当前读数</h3>
-            <div className="metric-grid">
-              <div className="metric">
-                <span>电流表 A</span>
-                <strong>{simulation.meter_results.ammeter.toFixed(2)} A</strong>
-              </div>
-              <div className="metric">
-                <span>电压表 V</span>
-                <strong>{simulation.meter_results.voltmeter.toFixed(2)} V</strong>
-              </div>
-            </div>
-          </section>
+      <section className="timeline-card">
+        <div className="card-head">
+          <div>
+            <p className="panel-kicker">Playback</p>
+            <h2>{currentStage?.title ?? "阶段控制"}</h2>
+          </div>
+          <div className="transport-group">
+            <button className="secondary-button" onClick={() => setIsPlaying((value) => !value)} disabled={!scenePayload}>
+              {isPlaying ? "暂停" : "播放"}
+            </button>
+            <button className="secondary-button" onClick={() => setProgress(0)} disabled={!scenePayload}>
+              回到阶段开头
+            </button>
+          </div>
+        </div>
+        <input
+          className="timeline-slider"
+          type="range"
+          min={0}
+          max={100}
+          value={Math.round(progress * 100)}
+          onChange={(event) => {
+            setIsPlaying(false);
+            setProgress(Number(event.target.value) / 100);
+          }}
+          disabled={!scenePayload}
+        />
+        <div className="timeline-notes">
+          {(scenePayload?.scene.playback_steps ?? []).map((step) => (
+            <article key={step.stage_id} className={step.stage_id === selectedStage ? "timeline-note timeline-note-active" : "timeline-note"}>
+              <strong>{stageEmoji(step.stage_id)}</strong>
+              <span>{step.headline}</span>
+            </article>
+          ))}
+        </div>
+      </section>
 
-          <section className="control-section">
-            <h3>数值调节</h3>
-            <label>
-              电源电压
-              <input type="number" min="0" step="0.5" value={state.battery_voltage} onChange={(event) => updateNumber("battery_voltage", event.target.value)} />
-            </label>
-            <label>
-              固定电阻 R
-              <input type="number" min="0.1" step="0.5" value={state.resistor_value} onChange={(event) => updateNumber("resistor_value", event.target.value)} />
-            </label>
-            <label>
-              滑变总阻值 P
-              <input type="number" min="0.1" step="0.5" value={state.rheostat_total} onChange={(event) => updateNumber("rheostat_total", event.target.value)} />
-            </label>
-            <label>
-              滑片位置
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.01"
-                value={state.rheostat_ratio}
-                onChange={(event) =>
-                  setState((current) => (current ? { ...current, rheostat_ratio: Number(event.target.value) } : current))
-                }
-              />
-            </label>
-          </section>
-
-          <section className="control-section">
-            <h3>元件显隐</h3>
-            {removableComponents.map((component) => (
-              <label key={component.id} className="toggle-row">
-                <span>{component.label ?? component.id}</span>
-                <input type="checkbox" checked={component.enabled} onChange={(event) => toggleComponent(component.id, event.target.checked)} />
-              </label>
-            ))}
-          </section>
-
-          <section className="control-section">
-            <h3>参考 / 上传预览</h3>
-            {currentPreview ? renderImagePreview(currentPreview) : null}
-          </section>
-
-          {pendingRecognition ? (
-            <details className="debug-panel" open>
-              <summary>识别调试信息</summary>
-              <pre>{JSON.stringify(pendingRecognition, null, 2)}</pre>
-            </details>
-          ) : null}
-
-          <details className="debug-panel">
-            <summary>调试信息</summary>
-            <pre>{JSON.stringify({ state, simulation }, null, 2)}</pre>
-          </details>
-
-          {error ? <p className="error-text">{error}</p> : null}
-        </aside>
+      <section className="inspector-grid">
+        <article className="inspector-card">
+          <p className="panel-kicker">Artifacts</p>
+          <h2>Harness & Executor</h2>
+          <pre>{JSON.stringify(session?.executor_run?.tool_trace ?? [], null, 2)}</pre>
+        </article>
+        <article className="inspector-card">
+          <p className="panel-kicker">Verification</p>
+          <h2>护栏与审计</h2>
+          <pre>{JSON.stringify(session?.verification_report ?? {}, null, 2)}</pre>
+        </article>
+        <article className="inspector-card">
+          <p className="panel-kicker">Logs</p>
+          <h2>Runtime</h2>
+          <pre>{JSON.stringify(runtime?.frame.overlays ?? {}, null, 2)}</pre>
+        </article>
       </section>
     </main>
   );

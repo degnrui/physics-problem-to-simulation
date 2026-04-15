@@ -20,7 +20,9 @@ except ImportError:  # pragma: no cover - exercised only when dependency missing
 from backend.app.abstraction.compiler import compile_detection_to_physics
 from backend.app.mechanics.service import (
     apply_mechanics_confirmation,
+    generate_mechanics_scene,
     recognize_mechanics_problem,
+    simulate_mechanics_scene,
 )
 from backend.app.scenes.figure1 import (
     apply_figure1_edit,
@@ -321,6 +323,26 @@ def create_app():
             "confidence_breakdown": confirmed["confidence_breakdown"],
             "issues": confirmed["issues"],
         }
+
+    @app.post("/api/mechanics/{session_id}/generate-scene")
+    def generate_mechanics_scene_endpoint(session_id: str):
+        session_payload = MECHANICS_SESSIONS.get(session_id)
+        if session_payload is None:
+            raise HTTPException(status_code=404, detail="mechanics session not found")
+        return generate_mechanics_scene(session_payload)
+
+    @app.post("/api/mechanics/{session_id}/simulate")
+    def simulate_mechanics_scene_endpoint(session_id: str, payload: dict):
+        session_payload = MECHANICS_SESSIONS.get(session_id)
+        if session_payload is None:
+            raise HTTPException(status_code=404, detail="mechanics session not found")
+        stage_id = payload.get("stage_id") or "slope"
+        progress = float(payload.get("progress", 0.0))
+        return simulate_mechanics_scene(
+            session_payload,
+            stage_id=stage_id,
+            progress=progress,
+        )
 
     @app.post("/api/detect")
     def detect(payload: dict):

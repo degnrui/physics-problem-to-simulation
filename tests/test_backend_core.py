@@ -13,6 +13,25 @@ def load_attr(module_name: str, attr_name: str):
         raise AssertionError(f"Missing {attr_name} in {module_name}") from exc
 
 
+MECHANICS_PROBLEM_TEXT = (
+    "17. 某兴趣小组设计了一个传送装置，AB是倾角为30°的斜轨道，BC是以恒定速率v0顺时针转动的水平传送带，"
+    "靠近C端有半径为R、质量为M置于光滑水平面上的可动半圆弧轨道。现有一质量为m的物块，从AB上距B点L的P点由静止下滑，"
+    "经传送带末端C点滑入圆弧轨道。物块与传送带间的动摩擦因数为μ，其余接触面均光滑。"
+    "已知R=0.36m，L=1.6m，v0=5m/s，m=0.2kg，M=1.8kg，μ=0.25。求物块滑到B点处的速度大小、"
+    "从B运动到C过程中摩擦力对其做的功、在传送带上滑动过程中产生的滑痕长度、即将离开圆弧轨道最高点的瞬间受到轨道的压力大小。"
+)
+
+MECHANICS_SOLUTION_TEXT = (
+    "滑块由P点到B点由动能定理得 mgsin30°L = 1/2 mv^2，解得 v=4m/s。"
+    "物块滑上传送带后做匀加速运动直至与传送带共速，摩擦力对其做功 Wf = 1/2 mv0^2 - 1/2 mv^2 = 0.9J。"
+    "加速度为 a=μg=2.5m/s^2，加速时间 t=(v0-v)/a=0.4s，滑痕长度 Δx=v0 t - (v0+v)t/2 = 0.2m。"
+    "物块开始进入圆弧轨道到到达即将最高点由水平方向动量守恒和机械能守恒可知，1/2 mv0^2 = 1/2 mv1^2 + 1/2 Mv2^2 + 2mgR，"
+    "解得 v1=0.8m/s。对滑块在最高点由牛顿第二定律得 F+mg = m(v1-v2)^2/R，解得 F=3N。"
+)
+
+MECHANICS_FINAL_ANSWERS = "4m/s;0.9J;0.2m;3N"
+
+
 class BackendCoreTests(unittest.TestCase):
     def test_physics_json_schema_accepts_minimal_series_circuit(self):
         PhysicsJsonDocument = load_attr(
@@ -688,26 +707,12 @@ class BackendCoreTests(unittest.TestCase):
         TestClient = load_attr("fastapi.testclient", "TestClient")
 
         client = TestClient(create_app())
-        problem_text = (
-            "17. 某兴趣小组设计了一个传送装置，AB是倾角为30°的斜轨道，BC是以恒定速率v0顺时针转动的水平传送带，"
-            "靠近C端有半径为R、质量为M置于光滑水平面上的可动半圆弧轨道。现有一质量为m的物块，从AB上距B点L的P点由静止下滑，"
-            "经传送带末端C点滑入圆弧轨道。物块与传送带间的动摩擦因数为μ，其余接触面均光滑。"
-            "已知R=0.36m，L=1.6m，v0=5m/s，m=0.2kg，M=1.8kg，μ=0.25。求物块滑到B点处的速度大小、"
-            "从B运动到C过程中摩擦力对其做的功、在传送带上滑动过程中产生的滑痕长度、即将离开圆弧轨道最高点的瞬间受到轨道的压力大小。"
-        )
-        solution_text = (
-            "滑块由P点到B点由动能定理得 mgsin30°L = 1/2 mv^2，解得 v=4m/s。"
-            "物块滑上传送带后做匀加速运动直至与传送带共速，摩擦力对其做功 Wf = 1/2 mv0^2 - 1/2 mv^2 = 0.9J。"
-            "加速度为 a=μg=2.5m/s^2，加速时间 t=(v0-v)/a=0.4s，滑痕长度 Δx=v0 t - (v0+v)t/2 = 0.2m。"
-            "物块开始进入圆弧轨道到到达即将最高点由水平方向动量守恒和机械能守恒可知，1/2 mv0^2 = 1/2 mv1^2 + 1/2 Mv2^2 + 2mgR，"
-            "解得 v1=0.8m/s。对滑块在最高点由牛顿第二定律得 F+mg = m(v1-v2)^2/R，解得 F=3N。"
-        )
         response = client.post(
             "/api/mechanics/recognize",
             data={
-                "problem_text": problem_text,
-                "solution_text": solution_text,
-                "final_answers": "4m/s;0.9J;0.2m;3N",
+                "problem_text": MECHANICS_PROBLEM_TEXT,
+                "solution_text": MECHANICS_SOLUTION_TEXT,
+                "final_answers": MECHANICS_FINAL_ANSWERS,
             },
         )
 
@@ -867,6 +872,82 @@ class BackendCoreTests(unittest.TestCase):
             "simulate_candidate_models",
         ])
         self.assertIn("verification_report", result)
+        self.assertEqual(result["selected_model"]["id"], "belt_arc_consistent")
+
+    def test_mechanics_generate_scene_endpoint_returns_teaching_scene(self):
+        create_app = load_attr("backend.app.main", "create_app")
+        TestClient = load_attr("fastapi.testclient", "TestClient")
+
+        client = TestClient(create_app())
+        session = client.post(
+            "/api/mechanics/recognize",
+            data={
+                "problem_text": MECHANICS_PROBLEM_TEXT,
+                "solution_text": MECHANICS_SOLUTION_TEXT,
+                "final_answers": MECHANICS_FINAL_ANSWERS,
+            },
+        ).json()
+
+        response = client.post(f"/api/mechanics/{session['session_id']}/generate-scene")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["scene"]["scene_id"], f"mechanics-{session['session_id']}")
+        self.assertEqual(len(payload["scene"]["stages"]), 4)
+        self.assertEqual(payload["scene"]["stages"][0]["id"], "slope")
+        self.assertTrue(any(actor["id"] == "block" for actor in payload["scene"]["actors"]))
+        self.assertTrue(any(panel["stage_id"] == "arc_top" for panel in payload["scene"]["lesson_panels"]))
+
+    def test_mechanics_simulate_endpoint_returns_runtime_frame(self):
+        create_app = load_attr("backend.app.main", "create_app")
+        TestClient = load_attr("fastapi.testclient", "TestClient")
+
+        client = TestClient(create_app())
+        session = client.post(
+            "/api/mechanics/recognize",
+            data={
+                "problem_text": MECHANICS_PROBLEM_TEXT,
+                "solution_text": MECHANICS_SOLUTION_TEXT,
+                "final_answers": MECHANICS_FINAL_ANSWERS,
+            },
+        ).json()
+        scene_payload = client.post(
+            f"/api/mechanics/{session['session_id']}/generate-scene"
+        ).json()
+
+        response = client.post(
+            f"/api/mechanics/{session['session_id']}/simulate",
+            json={"stage_id": "belt", "progress": 0.5},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["stage"]["id"], "belt")
+        self.assertIn("block", payload["frame"]["actors"])
+        self.assertIn("belt_speed", payload["frame"]["overlays"])
+        self.assertEqual(payload["frame"]["annotations"][0]["key"], "q2")
+        self.assertEqual(payload["scene"]["scene_id"], scene_payload["scene"]["scene_id"])
+
+    def test_mechanics_run_executor_supports_api_model_stub_contract(self):
+        normalize_mechanics_inputs = load_attr(
+            "backend.app.mechanics.parsing.normalize", "normalize_mechanics_inputs"
+        )
+        build_mechanics_harness_packet = load_attr(
+            "backend.app.mechanics.harness", "build_mechanics_harness_packet"
+        )
+        run_executor = load_attr("backend.app.mechanics.executor", "run_executor")
+
+        normalized = normalize_mechanics_inputs(
+            problem_text=MECHANICS_PROBLEM_TEXT,
+            solution_text=MECHANICS_SOLUTION_TEXT,
+            final_answers=MECHANICS_FINAL_ANSWERS,
+        )
+        harness = build_mechanics_harness_packet(normalized)
+        result = run_executor(harness, {"mode": "api_model"})
+
+        self.assertEqual(result["executor"], "api_model")
+        self.assertIn("runtime_warnings", result)
+        self.assertGreaterEqual(len(result["runtime_warnings"]), 1)
         self.assertEqual(result["selected_model"]["id"], "belt_arc_consistent")
 
     def test_recognition_confirm_endpoint_rejects_unknown_session(self):

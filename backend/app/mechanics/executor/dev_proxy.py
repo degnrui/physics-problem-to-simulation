@@ -83,6 +83,7 @@ def run_dev_proxy_executor(
         "executor": "dev_proxy",
         "tool_trace": tool_trace,
         "intermediate_artifacts": intermediate_artifacts,
+        "runtime_warnings": [],
         "problem_representation": problem_representation.model_dump(),
         "candidate_models": [item.model_dump() for item in candidate_models],
         "selected_model": selected_model.model_dump(),

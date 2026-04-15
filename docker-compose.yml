@@ -1,11 +1,11 @@
-version: "3.9"
-
 services:
   backend:
     image: python:3.11-slim
     working_dir: /workspace
     volumes:
       - ./:/workspace
+    env_file:
+      - .env.example
     command: >
       sh -c "python -m pip install --upgrade pip &&
       python -m pip install -r backend/requirements.txt &&
@@ -18,6 +18,32 @@ services:
     working_dir: /workspace
     volumes:
       - ./:/workspace
+    env_file:
+      - .env.example
+    environment:
+      VITE_BACKEND_ORIGIN: http://backend:8000
     command: sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 5173"
     ports:
       - "5173:5173"
+    depends_on:
+      - backend
+
+  agent-runtime:
+    image: python:3.11-slim
+    working_dir: /workspace
+    volumes:
+      - ./:/workspace
+    env_file:
+      - .env.example
+    command: |
+      sh -c 'python - <<'"'"'PY'"'"'
+      from os import getenv
+      print({
+          "service": "agent-runtime",
+          "executor_mode": getenv("EXECUTOR_MODE", "dev_proxy"),
+          "model_api_base_url": bool(getenv("MODEL_API_BASE_URL")),
+          "model_name": getenv("MODEL_NAME", "")
+      })
+      PY'
+    depends_on:
+      - backend

@@ -53,6 +53,8 @@
 - `POST /api/recognize/{session_id}/confirm`（提交确认修正并输出 scene + simulation）
 - `POST /api/mechanics/recognize`（上传力学题截图/文本/解析/答案，创建 mechanics session）
 - `POST /api/mechanics/{session_id}/confirm`（确认候选模型或关键假设，输出校验后的 mechanics simulation）
+- `POST /api/mechanics/{session_id}/generate-scene`（把 `final_simulation_spec` 编译成 teaching scene）
+- `POST /api/mechanics/{session_id}/simulate`（按阶段与进度返回 runtime frame）
 
 ## Recognition Session Response (`/api/recognize`)
 
@@ -84,7 +86,7 @@
 ## Mechanics Recognition Session Response (`/api/mechanics/recognize`)
 
 - `harness`: 当前下发给 GAI 的任务包、护栏、期望输出；开发期由本地代理执行器消费
-- `executor_run`: 开发态执行器产物，包含 `executor`、`tool_trace`、`intermediate_artifacts`
+- `executor_run`: 开发态执行器产物，包含 `executor`、`tool_trace`、`intermediate_artifacts`、`runtime_warnings`
 - `session_id`, `created_at`
 - `reference_image`
 - `problem_representation`: 题干抽取出的对象、已知量、约束、阶段与求解目标
@@ -97,8 +99,39 @@
 - `final_simulation_spec`: 准备交给前端或后续 runtime 的最终 simulation 规格
 - `needs_confirmation`: 有冲突或输入不完整时为 `true`
 - `execution_mode`: 当前执行模式；首版固定为 `dev_proxy`
+- `execution_mode`: 当前执行模式；可为 `dev_proxy` 或 `api_model`
 - `confidence_breakdown`: `overall`、`problem_extraction`、`solution_alignment`、`audit`
 - `issues`: 降级提示或输入完整性提示
+
+## Mechanics Scene Response (`/api/mechanics/{session_id}/generate-scene`)
+
+- `scene.scene_id`, `scene.title`
+- `scene.canvas`
+- `scene.actors[]`: 物块、斜面、传送带、可动圆弧等教学对象
+- `scene.stages[]`: `slope`、`belt`、`arc_entry`、`arc_top`
+- `scene.annotations[]`: 每一阶段关联的关键结论和答案
+- `scene.charts[]`: 速度/能量等联动图表
+- `scene.lesson_panels[]`: 教学提问、板书重点、结论
+- `scene.controls[]`: 播放、逐步、阶段切换
+- `scene.playback_steps[]`: 给前端 timeline 的检查点
+- `verification_report`
+- `final_simulation_spec`
+
+## Mechanics Runtime Request (`/api/mechanics/{session_id}/simulate`)
+
+- `stage_id`: 当前阶段，如 `belt`
+- `progress`: `0.0` 到 `1.0` 的阶段内进度
+
+返回：
+
+- `scene`
+- `stage`
+- `frame.progress`
+- `frame.actors`: 当前时刻物块/传送带/圆弧的可视状态
+- `frame.overlays`: 当前叠加说明，如带速、向心方程、法向力
+- `frame.annotations`: 当前阶段需要高亮的结论
+- `frame.chart_series`: 与主画面联动的图表
+- `verification_report`
 
 ## Mechanics Confirm Request (`/api/mechanics/{session_id}/confirm`)
 

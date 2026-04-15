@@ -109,6 +109,72 @@ class MechanicsSimulationResult(BaseModel):
     plots: List[Dict[str, Any]] = Field(default_factory=list)
 
 
+class MechanicsSceneActor(BaseModel):
+    id: str
+    kind: str
+    label: str
+    geometry: Dict[str, Any] = Field(default_factory=dict)
+    style: Dict[str, Any] = Field(default_factory=dict)
+
+
+class MechanicsSceneStage(BaseModel):
+    id: str
+    title: str
+    prompt: str
+    focus: List[str] = Field(default_factory=list)
+    duration: float = 1.0
+
+
+class MechanicsSceneAnnotation(BaseModel):
+    key: str
+    stage_id: str
+    label: str
+    value: str
+    emphasis: str = "neutral"
+
+
+class MechanicsChartSeries(BaseModel):
+    id: str
+    label: str
+    unit: str
+    points: List[Dict[str, float]] = Field(default_factory=list)
+
+
+class MechanicsLessonPanel(BaseModel):
+    stage_id: str
+    headline: str
+    question: str
+    takeaway: str
+    bullets: List[str] = Field(default_factory=list)
+
+
+class MechanicsSceneControl(BaseModel):
+    id: str
+    label: str
+    kind: str
+
+
+class MechanicsTeachingScene(BaseModel):
+    scene_id: str
+    title: str
+    canvas: Dict[str, Any]
+    actors: List[MechanicsSceneActor] = Field(default_factory=list)
+    stages: List[MechanicsSceneStage] = Field(default_factory=list)
+    annotations: List[MechanicsSceneAnnotation] = Field(default_factory=list)
+    charts: List[MechanicsChartSeries] = Field(default_factory=list)
+    lesson_panels: List[MechanicsLessonPanel] = Field(default_factory=list)
+    controls: List[MechanicsSceneControl] = Field(default_factory=list)
+    playback_steps: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class MechanicsRuntimeFrame(BaseModel):
+    progress: float
+    actors: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+    overlays: Dict[str, Any] = Field(default_factory=dict)
+    annotations: List[Dict[str, Any]] = Field(default_factory=list)
+    chart_series: List[MechanicsChartSeries] = Field(default_factory=list)
+
+
 class MechanicsRecognitionSession(BaseModel):
     session_id: str
     created_at: str

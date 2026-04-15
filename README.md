@@ -11,8 +11,8 @@
 
 现阶段包含两条主线：
 
-1. 图 1 复刻式交互电路 simulation
-2. 力学题双证据校验 harness（开发态由 `dev_proxy` 执行，不直接调用外部模型 API）
+1. 图 1 复刻式交互电路 simulation（历史 demo）
+2. `problem -> teaching simulation` 的力学 agent harness 主链路
 
 ## 当前能力
 
@@ -27,7 +27,9 @@
 - 支持 `POST /api/recognize/{session_id}/confirm` 后再应用到舞台
 - 保留底层 physics 模型，便于后续扩展到图 2
 - 支持上传力学题题干/解析/答案/截图，进入 mechanics harness 会话
-- mechanics 首版会返回 `harness` 任务包，并由本地 `dev_proxy` 代理执行器完成开发测试
+- mechanics 首版会返回 `harness` 任务包，并由本地 `dev_proxy` 或 `api_model` 执行器完成开发测试
+- mechanics 现已补齐 `final_simulation_spec -> scene compiler -> runtime -> teaching simulation`
+- 首页默认进入教师工作台，支持题干/解析/答案/截图输入后直接生成讲解型 simulation
 
 ## 技术栈
 
@@ -38,8 +40,8 @@
 ## 目录结构
 
 - `backend/`: 图 1 场景、API、抽象层、求解器
-- `backend/app/mechanics/`: 力学题 harness、抽模、校验与开发态代理执行器
-- `frontend/`: SVG 电路舞台与控制面板
+- `backend/app/mechanics/`: 力学题 harness、executor、scene compiler、runtime
+- `frontend/`: 教师工作台与 teaching simulation 前端
 - `sample_data/`: 图 1 参考 SVG 与早期样例图
 - `docs/`: 契约与设计文档
 - `tests/`: 后端回归测试
@@ -67,7 +69,7 @@ npm run dev
 ### 3. 测试
 
 ```bash
-python3 -m unittest tests.test_backend_core -v
+.venv/bin/python -m unittest tests.test_backend_core -v
 npm run build
 ```
 
@@ -94,7 +96,30 @@ npm run build
 - `POST /api/recognize/{session_id}/confirm`
 - `POST /api/mechanics/recognize`
 - `POST /api/mechanics/{session_id}/confirm`
+- `POST /api/mechanics/{session_id}/generate-scene`
+- `POST /api/mechanics/{session_id}/simulate`
 - `POST /api/scenes/import-json`
+
+## Mechanics 主链路
+
+教师工作台现在遵循这条 harness 路径：
+
+`problem input -> harness packet -> executor -> tool trace -> verification_report -> final_simulation_spec -> mechanics_scene -> runtime frame -> teaching simulation`
+
+其中：
+
+- `recognize` 负责上半段：建模、校验、回证
+- `generate-scene` 负责把规格编译成可讲解 scene
+- `simulate` 负责按阶段和进度返回 runtime frame
+- 前端负责把 runtime frame 渲染成讲解型成品 simulation
+
+若要切到真实模型 API：
+
+1. 复制 `.env.example` 为 `.env`
+2. 设置 `EXECUTOR_MODE=api_model`
+3. 填入 `MODEL_API_BASE_URL`、`MODEL_API_KEY`、`MODEL_NAME`
+
+当前 `api_model` 适配层已预留契约；未接入真实 API 时会退回 `dev_proxy` 并返回 `runtime_warnings`。
 
 ## 识图使用方式
 
@@ -118,10 +143,10 @@ npm run build
 
 ## 当前边界
 
-- 第一阶段只支持图 1 的模板化复刻式 simulation
+- 第一阶段只支持图 1 模板 demo 和一类力学 teaching simulation
 - 图 2 仅做后续扩展预留，本版不实现
 - 当前上传识图只保证“干净规整教材图”场景，不保证复杂拍照、阴影、透视畸变
 - 电路识图主链路仍是传统视觉+规则拓扑重建；它是当前 harness 的一个局部能力，不代表最终产品形态
-- 力学题链路首版是 harness + `dev_proxy` 执行模式，目标是验证 harness 是否足够指导最终产品中的 GAI，而不是用规则系统取代 GAI
+- 力学题链路首版以 harness 为主、GAI 为核；`dev_proxy` 只是开发期代理执行器，不是最终产品形态
 
 更多说明见 [docs/agent-harness.md](/Users/dengrui/Documents/工作/智能体搭建/真实情境到simulation/docs/agent-harness.md)。
