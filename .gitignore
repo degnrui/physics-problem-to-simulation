@@ -14,3 +14,4 @@ backend/.env.local
 .artifacts/
 runs/*
 !runs/.gitkeep
+scripts/
