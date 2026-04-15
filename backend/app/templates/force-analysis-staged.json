@@ -1,0 +1,10 @@
+{
+  "template_id": "force-analysis-staged-v1",
+  "scene_type": "force-analysis",
+  "description": "用于接触状态变化或阶段切换的受力分析题。",
+  "supports": [
+    "stage selector",
+    "force visibility switching",
+    "teacher observation overlay"
+  ]
+}

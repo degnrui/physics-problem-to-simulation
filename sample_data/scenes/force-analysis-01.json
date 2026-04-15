@@ -1,0 +1,78 @@
+{
+  "scene_type": "force-analysis",
+  "template_id": "force-analysis-horizontal-v1",
+  "coordinate_system": "x-right-y-up",
+  "visual_elements": [
+    {
+      "type": "object",
+      "id": "block",
+      "label": "木块",
+      "position": "center"
+    },
+    {
+      "type": "surface",
+      "id": "ground",
+      "label": "水平面",
+      "position": "bottom"
+    },
+    {
+      "type": "force-vector",
+      "id": "force-1",
+      "label": "重力",
+      "direction": "竖直向下",
+      "magnitude": "mg"
+    },
+    {
+      "type": "force-vector",
+      "id": "force-2",
+      "label": "支持力",
+      "direction": "竖直向上",
+      "magnitude": "N"
+    },
+    {
+      "type": "force-vector",
+      "id": "force-3",
+      "label": "拉力",
+      "direction": "水平向右",
+      "magnitude": "10N"
+    },
+    {
+      "type": "force-vector",
+      "id": "force-4",
+      "label": "摩擦力",
+      "direction": "水平向左",
+      "magnitude": "4N"
+    }
+  ],
+  "controls": [
+    {
+      "type": "toggle",
+      "id": "show-components",
+      "label": "显示分力",
+      "default": true
+    },
+    {
+      "type": "toggle",
+      "id": "show-resultant",
+      "label": "显示合力",
+      "default": true
+    },
+    {
+      "type": "slider",
+      "id": "mass",
+      "label": "质量",
+      "min": 0.5,
+      "max": 10,
+      "step": 0.5
+    }
+  ],
+  "parameters": {
+    "surface_type": "horizontal",
+    "show_resultant": true,
+    "show_force_components": true,
+    "motion_state": "合力向右，木块将向右加速"
+  },
+  "notes": [
+    "第一版 scene 只做结构化可视化，不做完整动画仿真"
+  ]
+}

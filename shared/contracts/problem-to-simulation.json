@@ -2,14 +2,180 @@
   "request": {
     "text": "string",
     "subject_hint": "high-school-physics",
-    "topic_hint": "dynamic-circuit"
+    "topic_hint": "high-school-physics",
+    "mode": "llm-assisted",
+    "debug": false
   },
-  "response": {
-    "problem_summary": "string",
-    "structured_problem": {},
-    "physics_model": {},
-    "scene": {},
-    "warnings": ["string"]
+  "run_create": {
+    "run_id": "string",
+    "status": "queued",
+    "route": "/runs/{run_id}",
+    "status_url": "/api/problem-to-simulation/runs/{run_id}"
+  },
+  "run_status": {
+    "run_id": "string",
+    "status": "planning",
+    "current_stage": "planning",
+    "current_step_index": 1,
+    "total_steps": 11,
+    "percent": 9,
+    "started_at": "2026-04-16T01:00:00+00:00",
+    "updated_at": "2026-04-16T01:00:02+00:00",
+    "finished_at": null,
+    "steps": [
+      {
+        "id": "task-0",
+        "label": "planner",
+        "status": "completed",
+        "artifacts_written": [
+          "task_plan"
+        ],
+        "error": "",
+        "execution_mode": "rule-based",
+        "model_name": "",
+        "validation_passed": true
+      },
+      {
+        "id": "task-1",
+        "label": "problem_profile",
+        "status": "running",
+        "artifacts_written": [],
+        "error": "",
+        "execution_mode": "llm-assisted",
+        "model_name": "gpt-5-mini",
+        "validation_passed": true
+      }
+    ]
+  },
+  "final_result": {
+    "run_id": "string",
+    "planner": {
+      "problem_family": "elastic-motion",
+      "model_family": "symmetric-elastic-motion",
+      "stage_type": "restoring-motion",
+      "simulation_mode": "restoring-force-lab",
+      "simulation_ready": true
+    },
+    "task_plan": {
+      "simulation_ready": true,
+      "tasks": []
+    },
+    "problem_profile": {
+      "research_object": "物块",
+      "scenario": "双橡皮绳约束下的回复运动",
+      "known_conditions": [],
+      "target_questions": [],
+      "stages": []
+    },
+    "physics_model": {
+      "model_type": "symmetric_elastic_motion",
+      "research_object": "物块",
+      "forces": [],
+      "force_cases": [],
+      "knowledge_points": [],
+      "misconceptions": [],
+      "derived_quantities": {}
+    },
+    "teaching_plan": {
+      "classroom_use": "受力讲评 + 回复运动可视化",
+      "primary_goal": "string",
+      "observation_targets": [],
+      "teacher_prompts": [],
+      "interaction_strategy": "string"
+    },
+    "scene_spec": {
+      "scene_type": "elastic-motion",
+      "template_id": "elastic-restoring-motion-v1",
+      "visual_elements": [],
+      "controls": [],
+      "parameters": {},
+      "teaching_overlay": {
+        "observation_targets": [],
+        "teacher_prompts": []
+      }
+    },
+    "simulation_spec": {
+      "template_id": "elastic-restoring-motion-v1",
+      "renderer_mode": "parameterized-motion-preview",
+      "bindings": {},
+      "controls": [],
+      "teaching_mode": "string"
+    },
+    "simulation_blueprint": {
+      "delivery_mode": "interactive-teaching-demo",
+      "render_priority": [
+        "main simulation viewport",
+        "linked charts",
+        "playback and seek controls",
+        "parameter control panel"
+      ],
+      "minimum_quality_bar": {
+        "interactive_controls": true,
+        "time_playback": true,
+        "linked_charts": true,
+        "teacher_guidance": true,
+        "option_diagnosis": true
+      }
+    },
+    "renderer_payload": {
+      "component_key": "elastic-restoring-motion",
+      "layout_mode": "simulation-lab",
+      "design_system": {
+        "theme_key": "impeccable-lab",
+        "density": "comfortable",
+        "tone": "teaching-exhibition",
+        "surface_style": "precision-paper"
+      }
+    },
+    "delivery_bundle": {
+      "primary_view": "simulation-viewport",
+      "secondary_views": [
+        "linked-charts",
+        "playback-panel",
+        "parameter-controls",
+        "teacher-guidance",
+        "option-diagnosis"
+      ],
+      "exportable": true,
+      "export_mode": "single-file-html",
+      "export_includes": [
+        "scene_spec",
+        "simulation_spec",
+        "renderer_payload",
+        "delivery_bundle"
+      ]
+    },
+    "validation_report": {
+      "ready_for_delivery": true,
+      "export_ready": true,
+      "route": "simulation",
+      "physics_checks": [],
+      "teaching_checks": [],
+      "template_checks": [],
+      "generation_trace": [
+        {
+          "artifact": "problem_profile",
+          "execution_mode": "fallback",
+          "model_name": "gpt-5-mini",
+          "validation_passed": true
+        }
+      ]
+    },
+    "task_log": [
+      {
+        "task_id": "task-1",
+        "task_type": "problem_profile",
+        "status": "completed",
+        "input_digest": "string",
+        "output_digest": "string",
+        "next_task": "physics_model"
+      }
+    ]
+  },
+  "export_html": {
+    "run_id": "string",
+    "export_mode": "single-file-html",
+    "download_url": "/api/problem-to-simulation/runs/{run_id}/export-html",
+    "path": "/abs/path/to/runs/{run_id}/exports/simulation.html"
   }
 }
-

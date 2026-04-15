@@ -1,0 +1,9 @@
+{
+  "template_id": "modeling-judgement-v1",
+  "scene_type": "analysis-only",
+  "description": "用于不能直接进入 simulation 的建模判断题。",
+  "supports": [
+    "teaching analysis",
+    "discussion prompts"
+  ]
+}

@@ -1,0 +1,116 @@
+{
+  "scene_type": "force-analysis",
+  "template_id": "force-analysis-staged-v1",
+  "coordinate_system": "x-right-y-up",
+  "visual_elements": [
+    {
+      "type": "object",
+      "id": "subject",
+      "label": "小猫",
+      "position": "center"
+    },
+    {
+      "type": "stage-badge",
+      "id": "active-stage",
+      "label": "蹬地阶段",
+      "position": "top"
+    },
+    {
+      "type": "force-vector",
+      "id": "stage-1-force-1",
+      "stage_id": "stage-1",
+      "label": "重力",
+      "direction": "竖直向下",
+      "magnitude": "mg"
+    },
+    {
+      "type": "force-vector",
+      "id": "stage-1-force-2",
+      "stage_id": "stage-1",
+      "label": "地面支持力",
+      "direction": "竖直向上",
+      "magnitude": "N"
+    }
+  ],
+  "controls": [
+    {
+      "type": "select",
+      "id": "stage-selector",
+      "label": "阶段切换",
+      "options": [
+        {
+          "id": "stage-1",
+          "label": "蹬地阶段"
+        },
+        {
+          "id": "stage-2",
+          "label": "腾空阶段"
+        }
+      ]
+    },
+    {
+      "type": "toggle",
+      "id": "show-resultant",
+      "label": "显示合力",
+      "default": true
+    },
+    {
+      "type": "toggle",
+      "id": "show-force-labels",
+      "label": "显示力名称",
+      "default": true
+    }
+  ],
+  "parameters": {
+    "surface_type": "staged-force-analysis",
+    "active_stage_id": "stage-1",
+    "stage_options": [
+      {
+        "id": "stage-1",
+        "label": "蹬地阶段"
+      },
+      {
+        "id": "stage-2",
+        "label": "腾空阶段"
+      }
+    ],
+    "forces_by_stage": {
+      "stage-1": [
+        {
+          "name": "重力",
+          "direction": "竖直向下",
+          "magnitude": "mg",
+          "category": "field"
+        },
+        {
+          "name": "地面支持力",
+          "direction": "竖直向上",
+          "magnitude": "N",
+          "category": "contact"
+        }
+      ],
+      "stage-2": [
+        {
+          "name": "重力",
+          "direction": "竖直向下",
+          "magnitude": "mg",
+          "category": "field"
+        }
+      ]
+    },
+    "motion_state_by_stage": {
+      "stage-1": "与地面接触，竖直方向合力向上，准备跃起。",
+      "stage-2": "离地后只受重力作用，做曲线运动。"
+    },
+    "focus_by_stage": {
+      "stage-1": "识别接触力存在的前提是与地面接触。",
+      "stage-2": "离地后地面支持力消失，只保留非接触力。"
+    },
+    "show_resultant": true,
+    "resultant_hint": "离地后只受重力作用，做曲线运动。",
+    "scene_mode": "stage-switching"
+  },
+  "notes": [
+    "第一版 scene 以阶段切换和受力显隐为主，不做连续时间动画。"
+  ]
+}

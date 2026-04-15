@@ -1,0 +1,11 @@
+{
+  "template_id": "projectile-board-impact-v1",
+  "scene_type": "projectile-motion",
+  "description": "用于桌边出射后击中可调木板的平抛运动题。",
+  "supports": [
+    "trajectory display",
+    "impact vector display",
+    "height parameter control",
+    "formula overlay"
+  ]
+}

@@ -1,0 +1,51 @@
+{
+  "model_type": "force_analysis",
+  "research_object": "木块",
+  "scenario": "粗糙水平面受力",
+  "forces": [
+    {
+      "name": "重力",
+      "direction": "竖直向下",
+      "magnitude": "mg",
+      "category": "field"
+    },
+    {
+      "name": "支持力",
+      "direction": "竖直向上",
+      "magnitude": "N",
+      "category": "contact"
+    },
+    {
+      "name": "拉力",
+      "direction": "水平向右",
+      "magnitude": "10N",
+      "category": "applied"
+    },
+    {
+      "name": "摩擦力",
+      "direction": "水平向左",
+      "magnitude": "4N",
+      "category": "contact"
+    }
+  ],
+  "constraints": [
+    "受力分析限于题干明示条件",
+    "默认重力方向竖直向下",
+    "默认支持面提供支持力"
+  ],
+  "motion_state": "合力向右，木块将向右加速",
+  "core_principles": [
+    "牛顿第二定律",
+    "受力平衡分析",
+    "摩擦力方向判断"
+  ],
+  "misconceptions": [
+    "把摩擦力方向误判为与速度同向",
+    "遗漏支持力或重力"
+  ],
+  "derived_quantities": {
+    "gravity_expression": "G=mg",
+    "pull_force": "10N",
+    "friction_force": "4N"
+  }
+}

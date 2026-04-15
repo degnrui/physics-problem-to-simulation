@@ -1,0 +1,10 @@
+{
+  "template_id": "force-analysis-horizontal-v1",
+  "scene_type": "force-analysis",
+  "description": "用于单阶段受力平衡与合力判断。",
+  "supports": [
+    "single-stage force view",
+    "resultant hint",
+    "control toggles"
+  ]
+}

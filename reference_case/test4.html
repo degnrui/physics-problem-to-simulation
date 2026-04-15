@@ -1,0 +1,1262 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>橡皮绳阻尼振动探究 | 交互式仿真</title>
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --primary-color: #2563eb;
+            --secondary-color: #64748b;
+            --accent-color: #ef4444;
+            --bg-color: #f8fafc;
+            --panel-bg: #ffffff;
+            --text-color: #1e293b;
+            --border-radius: 8px;
+            --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Modal / Dialog */
+        dialog {
+            border: none;
+            border-radius: 12px;
+            box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1);
+            padding: 0;
+            max-width: 500px;
+            width: 90%;
+            margin: auto;
+        }
+        
+        dialog::backdrop {
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(2px);
+        }
+
+        .modal-content {
+            padding: 24px;
+        }
+
+        .modal-header {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 12px;
+            color: var(--primary-color);
+        }
+
+        .modal-body {
+            font-size: 0.95rem;
+            line-height: 1.6;
+            color: #475569;
+            margin-bottom: 20px;
+        }
+
+        .modal-actions {
+            display: flex;
+            justify-content: flex-end;
+        }
+
+        .btn-primary {
+            background-color: var(--primary-color);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 6px;
+            border: none;
+            cursor: pointer;
+            font-weight: 500;
+            transition: background 0.2s;
+        }
+
+        .btn-primary:hover {
+            background-color: #1d4ed8;
+        }
+
+        /* Layout */
+        .app-container {
+            display: grid;
+            grid-template-columns: 7fr 3fr; /* 70% : 30% */
+            height: 100%;
+            width: 100%;
+        }
+
+        /* Left Column */
+        .visual-zone {
+            display: flex;
+            flex-direction: column;
+            padding: 16px;
+            gap: 16px;
+            height: 100%;
+            overflow: hidden;
+        }
+
+        .canvas-container {
+            flex: 3;
+            background: white;
+            border-radius: var(--border-radius);
+            box-shadow: var(--shadow);
+            position: relative;
+            overflow: hidden;
+        }
+
+        canvas#simCanvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        .charts-container {
+            flex: 2;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            min-height: 0; /* Prevent grid overflow */
+        }
+
+        .chart-wrapper {
+            background: white;
+            border-radius: var(--border-radius);
+            box-shadow: var(--shadow);
+            padding: 10px;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .chart-title {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--secondary-color);
+            text-align: center;
+            margin-bottom: 4px;
+        }
+
+        .chart-canvas-wrapper {
+            flex: 1;
+            position: relative;
+            width: 100%;
+            min-height: 0;
+        }
+
+        /* Energy Overlay */
+        #energyOverlay {
+            position: absolute;
+            top: 35px; /* below title */
+            right: 15px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 4px 8px;
+            border-radius: 4px;
+            border: 1px solid #cbd5e1;
+            font-size: 0.8rem;
+            font-family: monospace;
+            color: var(--text-color);
+            display: none; /* hidden by default */
+            z-index: 10;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+
+        /* Right Column */
+        .control-panel {
+            background: var(--panel-bg);
+            border-left: 1px solid #e2e8f0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            overflow-y: auto;
+            box-shadow: -2px 0 10px rgba(0,0,0,0.05);
+        }
+
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #e2e8f0;
+            padding-bottom: 12px;
+        }
+
+        .panel-title {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: var(--text-color);
+        }
+
+        .help-btn {
+            background: none;
+            border: 1px solid #cbd5e1;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            color: var(--secondary-color);
+            cursor: pointer;
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* Control Sections */
+        .control-section {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .section-title {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #94a3b8;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+
+        /* Playback Controls */
+        .playback-controls {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        .btn-control {
+            padding: 10px;
+            border-radius: 6px;
+            border: 1px solid #e2e8f0;
+            background: #f1f5f9;
+            color: var(--text-color);
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-control:hover {
+            background: #e2e8f0;
+        }
+
+        .btn-control.active {
+            background: #dbeafe;
+            color: var(--primary-color);
+            border-color: #bfdbfe;
+        }
+
+        .time-display {
+            font-family: monospace;
+            text-align: center;
+            font-size: 0.9rem;
+            color: var(--secondary-color);
+            margin-top: 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        /* Sliders */
+        .slider-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .slider-label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.9rem;
+            color: #475569;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            accent-color: var(--primary-color);
+            cursor: pointer;
+        }
+
+        /* Seek Bar Specifics */
+        .seek-container {
+            background: #f1f5f9;
+            padding: 8px;
+            border-radius: 6px;
+            border: 1px solid #e2e8f0;
+        }
+
+        input[type="range"].seek-bar {
+            height: 6px;
+            margin: 8px 0 4px 0;
+        }
+
+        .accordion {
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            overflow: hidden;
+        }
+        
+        .accordion-header {
+            background: #f8fafc;
+            padding: 8px 12px;
+            font-size: 0.85rem;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            user-select: none;
+        }
+
+        .accordion-content {
+            padding: 12px;
+            display: none;
+            background: white;
+            gap: 12px;
+            flex-direction: column;
+        }
+
+        .accordion.open .accordion-content {
+            display: flex;
+        }
+
+        /* Checkboxes */
+        .checkbox-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .checkbox-label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.9rem;
+            cursor: pointer;
+            user-select: none;
+        }
+        
+        /* Utility classes */
+        .color-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Help Modal -->
+    <dialog id="helpModal">
+        <div class="modal-content">
+            <div class="modal-header">欢迎来到“橡皮绳阻尼振动”实验室</div>
+            <div class="modal-body">
+                <p>这是一个看似简单却包含深意的物理模型。这不是普通的弹簧振子！</p>
+                <br>
+                <strong>你需要完成的任务：</strong>
+                <ul style="margin-left: 20px; margin-top: 8px;">
+                    <li><strong>观察回复力：</strong>勾选“显示合弹力”，观察力的大小是如何随位置变化的。它和距离成正比吗？</li>
+                    <li><strong>探究能量：</strong>试着增加“摩擦因数”，观察下方的能量图表。机械能去哪儿了？</li>
+                    <li><strong>自动停止：</strong>当物体动能耗尽，仿真会自动停止。你可以拖动“时间回放”条来查看刚才的过程。</li>
+                </ul>
+            </div>
+            <div class="modal-actions">
+                <button class="btn-primary" onclick="closeModal()">开始实验</button>
+            </div>
+        </div>
+    </dialog>
+
+    <div class="app-container">
+        <!-- LEFT COLUMN -->
+        <div class="visual-zone">
+            <!-- Top: Simulation Canvas -->
+            <div class="canvas-container" id="canvasContainer">
+                <canvas id="simCanvas"></canvas>
+            </div>
+            
+            <!-- Bottom: Charts -->
+            <div class="charts-container">
+                <div class="chart-wrapper">
+                    <div class="chart-title">回复力 vs 位移 (F-x)</div>
+                    <div class="chart-canvas-wrapper">
+                        <canvas id="chartFx"></canvas>
+                    </div>
+                </div>
+                <div class="chart-wrapper">
+                    <div class="chart-title">能量转化 (E-t)</div>
+                    <!-- Energy Sum Display Overlay -->
+                    <div id="energyOverlay">Total: 0.0 J</div>
+                    <div class="chart-canvas-wrapper">
+                        <canvas id="chartEt"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- RIGHT COLUMN -->
+        <div class="control-panel">
+            <div class="panel-header">
+                <span class="panel-title">橡皮绳阻尼振动</span>
+                <button class="help-btn" onclick="openModal()">?</button>
+            </div>
+
+            <!-- Section A: Playback -->
+            <div class="control-section">
+                <div class="section-title">播放与回放</div>
+                
+                <div class="playback-controls">
+                    <button id="btnPlayPause" class="btn-control" onclick="togglePlay()">开始</button>
+                    <button id="btnReset" class="btn-control" onclick="resetSim()">重置</button>
+                </div>
+
+                <div class="seek-container">
+                    <div class="time-display">
+                        <span>进度 / 回放</span>
+                        <span>t = <span id="timeVal">0.00</span> s</span>
+                    </div>
+                    <input type="range" id="seekSlider" class="seek-bar" min="0" max="0" step="0.01" value="0" disabled oninput="onSeek(this.value)">
+                </div>
+
+                <div class="slider-group" style="margin-top: 8px;">
+                    <div class="slider-label">
+                        <span>播放速度</span>
+                        <span id="valSpeed">1.0x</span>
+                    </div>
+                    <input type="range" id="speedSlider" min="0.1" max="5.0" step="0.1" value="1.0" oninput="updateSpeed(this.value)">
+                </div>
+            </div>
+
+            <!-- Section B: Variables -->
+            <div class="control-section">
+                <div class="section-title">初始设定</div>
+                <div class="slider-group">
+                    <div class="slider-label">
+                        <span>初始拉伸 L</span>
+                        <span id="valL">0.50 m</span>
+                    </div>
+                    <input type="range" id="sliderL" min="0.1" max="1.0" step="0.01" value="0.5">
+                </div>
+            </div>
+
+            <div class="control-section">
+                <div class="section-title">环境属性</div>
+                <div class="slider-group">
+                    <div class="slider-label">
+                        <span>摩擦因数 μ</span>
+                        <span id="valMu">0.20</span>
+                    </div>
+                    <input type="range" id="sliderMu" min="0.0" max="0.8" step="0.05" value="0.2">
+                </div>
+                <div class="slider-group">
+                    <div class="slider-label">
+                        <span>半宽距离 d (原长)</span>
+                        <span id="valD">0.40 m</span>
+                    </div>
+                    <input type="range" id="sliderD" min="0.2" max="1.0" step="0.05" value="0.4">
+                </div>
+                
+                <!-- Foldable Advanced Settings -->
+                <div class="accordion" id="advAccordion">
+                    <div class="accordion-header" onclick="toggleAccordion()">
+                        <span>更多设置 (m, k)</span>
+                        <span>▼</span>
+                    </div>
+                    <div class="accordion-content">
+                        <div class="slider-group">
+                            <div class="slider-label">
+                                <span>劲度系数 k</span>
+                                <span id="valK">50 N/m</span>
+                            </div>
+                            <input type="range" id="sliderK" min="10" max="100" step="5" value="50">
+                        </div>
+                        <div class="slider-group">
+                            <div class="slider-label">
+                                <span>物块质量 m</span>
+                                <span id="valM">1.0 kg</span>
+                            </div>
+                            <input type="range" id="sliderM" min="0.1" max="2.0" step="0.1" value="1.0">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Section C: Visual Tools -->
+            <div class="control-section">
+                <div class="section-title">可视化工具</div>
+                <div class="checkbox-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="chkForce" onchange="updateVisuals()">
+                        <span class="color-dot" style="background:var(--accent-color)"></span>
+                        显示合力 (F_net)
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="chkComponents" onchange="updateVisuals()">
+                        <span class="color-dot" style="background:var(--secondary-color)"></span>
+                        显示绳张力
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="chkVelocity" onchange="updateVisuals()">
+                        <span class="color-dot" style="background:#10b981"></span>
+                        显示速度 (v)
+                    </label>
+                    <!-- New Checkboxes -->
+                    <div style="height: 1px; background: #e2e8f0; margin: 4px 0;"></div>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="chkTheory" onchange="toggleTheoryCurve()">
+                        <span class="color-dot" style="background:#cbd5e1"></span>
+                        显示理论曲线背景
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="chkTotalEnergy" onchange="toggleEnergyDisplay()">
+                        <span class="color-dot" style="background:#333"></span>
+                        验证能量守恒 (显示总能)
+                    </label>
+                </div>
+            </div>
+        </div>
+    </div>
+
+<script>
+/**
+ * PHYSICS ENGINE & SIMULATION CONTROLLER
+ */
+
+// --- Constants & Config ---
+const g = 9.8;
+const dt = 1/120; // High precision time step
+const pxPerMeter = 300; // Visual scale
+
+// --- State ---
+let state = {
+    t: 0,
+    x: 0, 
+    v: 0,
+    params: {
+        L: 0.5,
+        mu: 0.2,
+        d: 0.4,
+        k: 50,
+        m: 1.0
+    },
+    energy: {
+        elastic: 0,
+        kinetic: 0,
+        thermal: 0,
+        total: 0
+    },
+    forces: {
+        restore: 0,
+        friction: 0,
+        net: 0,
+        tension: 0
+    },
+    trajectory: [], // For F-x chart trace
+    history: [],    // Full State History for playback: {t, x, v, e, k, q, f}
+    running: false,
+    stopped: false,
+    speedMultiplier: 1.0,
+    baseStepsPerFrame: 4
+};
+
+// --- DOM Elements ---
+const canvas = document.getElementById('simCanvas');
+const ctx = canvas.getContext('2d');
+const ui = {
+    btnPlay: document.getElementById('btnPlayPause'),
+    time: document.getElementById('timeVal'),
+    seekSlider: document.getElementById('seekSlider'),
+    speedLabel: document.getElementById('valSpeed'),
+    energyOverlay: document.getElementById('energyOverlay'),
+    inputs: {
+        L: document.getElementById('sliderL'),
+        mu: document.getElementById('sliderMu'),
+        d: document.getElementById('sliderD'),
+        k: document.getElementById('sliderK'),
+        m: document.getElementById('sliderM')
+    },
+    displays: {
+        L: document.getElementById('valL'),
+        mu: document.getElementById('valMu'),
+        d: document.getElementById('valD'),
+        k: document.getElementById('valK'),
+        m: document.getElementById('valM')
+    },
+    checks: {
+        force: document.getElementById('chkForce'),
+        components: document.getElementById('chkComponents'),
+        velocity: document.getElementById('chkVelocity'),
+        theory: document.getElementById('chkTheory'),
+        totalEnergy: document.getElementById('chkTotalEnergy')
+    }
+};
+
+// --- Initialization ---
+function init() {
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+    
+    // Bind Inputs
+    Object.keys(ui.inputs).forEach(key => {
+        ui.inputs[key].addEventListener('input', (e) => {
+            const val = parseFloat(e.target.value);
+            state.params[key] = val;
+            
+            // Update display text
+            let unit = '';
+            if(key === 'L' || key === 'd') unit = ' m';
+            if(key === 'k') unit = ' N/m';
+            if(key === 'm') unit = ' kg';
+            ui.displays[key].innerText = val.toFixed(key === 'k' ? 0 : 2) + unit;
+
+            // Interaction logic
+            if (key === 'L' && !state.running) {
+                resetSim(); 
+            } else if (!state.running) {
+                calculateTheoreticalCurve();
+                drawScene();
+            } else {
+                if(key !== 'L') calculateTheoreticalCurve();
+            }
+        });
+    });
+
+    // Charts
+    initCharts();
+
+    // Initial Reset
+    resetSim();
+    
+    // Show Modal
+    document.getElementById('helpModal').showModal();
+    
+    // Start Loop
+    requestAnimationFrame(loop);
+}
+
+function openModal() { document.getElementById('helpModal').showModal(); }
+function closeModal() { document.getElementById('helpModal').close(); }
+function toggleAccordion() { document.getElementById('advAccordion').classList.toggle('open'); }
+
+// --- Playback Controls ---
+function updateSpeed(val) {
+    state.speedMultiplier = parseFloat(val);
+    ui.speedLabel.innerText = state.speedMultiplier.toFixed(1) + 'x';
+}
+
+function onSeek(val) {
+    const time = parseFloat(val);
+    if (state.history.length === 0) return;
+
+    // Pause if seeking
+    if (state.running) {
+        togglePlay(); 
+    }
+
+    // Find nearest state in history
+    const frame = state.history.find(h => Math.abs(h.t - time) < dt*2) || state.history[state.history.length-1];
+    if (frame) {
+        // Restore state
+        state.t = frame.t;
+        state.x = frame.x;
+        state.v = frame.v;
+        state.energy.elastic = frame.e;
+        state.energy.kinetic = frame.k;
+        state.energy.thermal = frame.q;
+        state.energy.total = frame.e + frame.k + frame.q;
+        
+        ui.time.innerText = state.t.toFixed(2);
+        updateDisplayState();
+        drawScene();
+        
+        chartFxInstance.data.datasets[2].data = [{x: state.x, y: state.forces.net}];
+        chartFxInstance.update('none');
+    }
+}
+
+function updateSeekBar() {
+    ui.seekSlider.max = state.t.toFixed(2);
+    ui.seekSlider.value = state.t.toFixed(2);
+    ui.seekSlider.disabled = false;
+}
+
+// --- Physics Logic ---
+
+function resetSim() {
+    state.running = false;
+    state.stopped = false;
+    state.t = 0;
+    state.x = state.params.L; 
+    state.v = 0;
+    state.energy = { elastic: 0, kinetic: 0, thermal: 0, total: 0 };
+    state.trajectory = [];
+    state.history = [];
+    
+    // Record initial state
+    const k_spring = state.params.k;
+    const l = Math.sqrt(state.x*state.x + state.params.d*state.params.d);
+    const ep = k_spring * (l - state.params.d)**2;
+    state.history.push({t:0, x:state.x, v:0, e:ep, k:0, q:0, f:0});
+
+    ui.btnPlay.innerText = "开始";
+    ui.btnPlay.classList.remove('active');
+    ui.seekSlider.value = 0;
+    ui.seekSlider.max = 0;
+    ui.seekSlider.disabled = true;
+    
+    updateDisplayState(); 
+    calculateTheoreticalCurve();
+    updateCharts(true); 
+    drawScene();
+    updateEnergyDisplay();
+}
+
+function togglePlay() {
+    if (state.running) {
+        state.running = false;
+        ui.btnPlay.innerText = "继续";
+        ui.btnPlay.classList.remove('active');
+    } else {
+        if(state.stopped) {
+            // Find index of current t
+            const cutIdx = state.history.findIndex(h => h.t >= state.t);
+            if (cutIdx !== -1) {
+                state.history = state.history.slice(0, cutIdx + 1);
+                state.trajectory = state.trajectory.slice(0, cutIdx + 1);
+                state.stopped = false; // Resume
+            } else {
+                // Was at end, just reset
+                resetSim(); 
+                state.running = true; 
+            }
+        }
+        
+        // Check if we are in the middle of history (seeked back)
+        if (state.t < ui.seekSlider.max) {
+             const cutIdx = state.history.findIndex(h => h.t >= state.t);
+             if (cutIdx !== -1) {
+                 state.history = state.history.slice(0, cutIdx + 1);
+                 // Reset trajectory data to match history roughly
+                 state.trajectory = state.history.map(h => ({x: h.x, f: h.f}));
+             }
+             state.stopped = false;
+        }
+
+        state.running = true;
+        ui.btnPlay.innerText = "暂停";
+        ui.btnPlay.classList.add('active');
+    }
+}
+
+// Pure function to calculate forces from a given state
+function getForces(x, v) {
+    const { d, k, m, mu } = state.params;
+    
+    // Geometry
+    const distSq = x*x + d*d;
+    const l_current = Math.sqrt(distSq);
+    
+    // Spring Force
+    const elongation = l_current - d;
+    const F_spring = k * elongation;
+
+    // Restoring Force
+    const F_restore_val = -2 * F_spring * (x / l_current); 
+    
+    // Friction Magnitude
+    const f_mag = mu * m * g;
+
+    // Net Force Logic
+    let F_net = 0;
+    let isStopped = false;
+
+    // Thresholds
+    const VELOCITY_THRESHOLD = 0.001; 
+    
+    // Kinetic Friction
+    if (Math.abs(v) > VELOCITY_THRESHOLD) {
+        const f_vec = -Math.sign(v) * f_mag;
+        F_net = F_restore_val + f_vec;
+    } else {
+        // Static Logic window
+        if (Math.abs(F_restore_val) <= f_mag) {
+            F_net = 0; // Stiction
+            isStopped = true;
+        } else {
+            // Break static friction
+            const f_vec = -Math.sign(F_restore_val) * f_mag;
+            F_net = F_restore_val + f_vec;
+        }
+    }
+
+    return {
+        net: F_net,
+        restore: F_restore_val,
+        tension: F_spring,
+        friction_mag: f_mag,
+        isStopped: isStopped
+    };
+}
+
+// Update global state for display purposes (UI/Charts)
+function updateDisplayState() {
+    const res = getForces(state.x, state.v);
+    const { d, k, m, mu } = state.params;
+    
+    // Update Forces
+    state.forces.net = res.net;
+    state.forces.restore = res.restore;
+    state.forces.tension = res.tension;
+    state.forces.friction = res.friction_mag;
+
+    // Update Energies
+    const elongation = Math.sqrt(state.x*state.x + d*d) - d;
+    state.energy.elastic = 2 * (0.5 * k * elongation * elongation);
+    state.energy.kinetic = 0.5 * m * state.v * state.v;
+    // Thermal is accumulated in stepPhysics
+    state.energy.total = state.energy.elastic + state.energy.kinetic + state.energy.thermal;
+}
+
+function stepPhysics() {
+    if (!state.running || state.stopped) return;
+
+    const m = state.params.m;
+    
+    // --- VELOCITY VERLET INTEGRATION ---
+    
+    // 1. Calculate Acceleration at t
+    const forces_t = getForces(state.x, state.v);
+    
+    // Fallback: Check stop condition based on current state (for very slow creeping)
+    if (forces_t.isStopped && Math.abs(state.v) < 0.001) {
+        stopSimulation();
+        return;
+    }
+
+    const a_t = forces_t.net / m;
+
+    // 2. Update Position to t + dt
+    const x_new = state.x + state.v * dt + 0.5 * a_t * dt * dt;
+
+    // 3. Predict velocity for friction direction
+    const v_pred = state.v + a_t * dt;
+
+    // 4. Calculate Forces at t + dt
+    const forces_new = getForces(x_new, v_pred);
+    const a_new = forces_new.net / m;
+
+    // 5. Update Velocity to t + dt
+    const v_new = state.v + 0.5 * (a_t + a_new) * dt;
+
+    // --- ZERO-CROSSING / STOP LOGIC ---
+    // If velocity direction flipped (product <= 0), we crossed zero.
+    // Check if the restoring force at the new position is weak enough to stick.
+    if (state.v * v_new <= 0) {
+        // We crossed zero. Check static friction condition.
+        // forces_new.restore is accurate for the new position.
+        // forces_new.friction_mag is constant.
+        if (Math.abs(forces_new.restore) <= forces_new.friction_mag) {
+            stopSimulation();
+            return;
+        }
+    }
+
+    // 6. Calculate Friction Work
+    const dx = Math.abs(x_new - state.x);
+    if (!forces_t.isStopped) {
+         state.energy.thermal += forces_t.friction_mag * dx;
+    }
+
+    // Commit updates
+    state.v = v_new;
+    state.x = x_new;
+    state.t += dt;
+
+    // Store history (~60Hz)
+    if (state.history.length === 0 || (state.t - state.history[state.history.length-1].t) >= 0.016) {
+        const k_val = state.params.k;
+        const elongation = Math.sqrt(state.x*state.x + state.params.d*state.params.d) - state.params.d;
+        const Ep = k_val * elongation * elongation; 
+        const Ek = 0.5 * m * state.v * state.v;
+        
+        const frame = {
+            t: state.t, 
+            x: state.x,
+            v: state.v,
+            e: Ep, 
+            k: Ek, 
+            q: state.energy.thermal,
+            f: forces_new.net
+        };
+        state.history.push(frame);
+        
+        // For Chart trace (decimated)
+        state.trajectory.push({x: state.x, f: forces_new.net});
+        
+        if (state.history.length > 5000) {
+            state.history.shift(); // FIFO
+            state.trajectory.shift();
+        }
+    }
+}
+
+function stopSimulation() {
+    state.stopped = true;
+    state.running = false;
+    state.v = 0;
+    state.forces.net = 0;
+    ui.btnPlay.innerText = "结束";
+    ui.btnPlay.classList.remove('active');
+    updateSeekBar();
+}
+
+// --- Visuals (Canvas) ---
+function resizeCanvas() {
+    const container = document.getElementById('canvasContainer');
+    canvas.width = container.clientWidth;
+    canvas.height = container.clientHeight;
+    drawScene();
+}
+
+function drawScene() {
+    const w = canvas.width;
+    const h = canvas.height;
+    const cx = w / 2;
+    const cy = h / 2;
+    
+    // Clear
+    ctx.clearRect(0, 0, w, h);
+    
+    // Background
+    ctx.fillStyle = `rgba(240, 240, 240, ${0.3 + state.params.mu * 0.5})`; 
+    ctx.fillRect(0, 0, w, h);
+
+    // Coordinate system logic
+    const d_px = state.params.d * pxPerMeter;
+    const x_px = state.x * pxPerMeter; 
+    
+    const posA = {x: cx, y: cy - d_px};
+    const posB = {x: cx, y: cy + d_px};
+    const posBlock = {x: cx + x_px, y: cy};
+
+    // Draw Line AB (dashed)
+    ctx.beginPath();
+    ctx.setLineDash([5, 5]);
+    ctx.strokeStyle = '#cbd5e1';
+    ctx.moveTo(posA.x, posA.y);
+    ctx.lineTo(posB.x, posB.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    
+    // Draw Center Line
+    ctx.beginPath();
+    ctx.strokeStyle = '#e2e8f0';
+    ctx.moveTo(0, cy);
+    ctx.lineTo(w, cy);
+    ctx.stroke();
+
+    // Draw Springs/Rubber Bands
+    const l = Math.sqrt(state.x*state.x + state.params.d*state.params.d);
+    const stretch = l / state.params.d; 
+    const tensionRatio = Math.min((stretch - 1.0) / 0.5, 1); 
+    const r = Math.round(96 + (239-96)*tensionRatio);
+    const g_col = Math.round(165 + (68-165)*tensionRatio);
+    const b = Math.round(250 + (68-250)*tensionRatio);
+    const ropeColor = `rgb(${r},${g_col},${b})`;
+
+    ctx.lineWidth = 4 + (state.params.k - 10)/20; 
+    ctx.lineCap = 'round';
+    
+    // Rope A & B
+    ctx.beginPath(); ctx.strokeStyle = ropeColor;
+    ctx.moveTo(posA.x, posA.y); ctx.lineTo(posBlock.x, posBlock.y); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(posB.x, posB.y); ctx.lineTo(posBlock.x, posBlock.y); ctx.stroke();
+
+    // Draw Fixed Points A, B
+    ctx.fillStyle = '#475569';
+    [posA, posB].forEach(p => {
+        ctx.beginPath(); ctx.arc(p.x, p.y, 6, 0, Math.PI*2); ctx.fill();
+    });
+    ctx.font = "14px Arial";
+    ctx.fillText("A", posA.x + 10, posA.y);
+    ctx.fillText("B", posB.x + 10, posB.y);
+    ctx.fillText("C", cx + 5, cy - 5);
+
+    // Draw Block
+    const blockSize = 40 * Math.sqrt(state.params.m); 
+    ctx.fillStyle = '#1e293b';
+    ctx.shadowBlur = 10;
+    ctx.shadowColor = "rgba(0,0,0,0.2)";
+    ctx.fillRect(posBlock.x - blockSize/2, posBlock.y - blockSize/2, blockSize, blockSize);
+    ctx.shadowBlur = 0;
+
+    // --- Vectors Overlay ---
+    if (ui.checks.force.checked && Math.abs(state.forces.net) > 0.01) {
+        drawArrow(posBlock.x, posBlock.y, state.forces.net / 20 * pxPerMeter, 0, '#ef4444', 3);
+        ctx.fillStyle = '#ef4444';
+        ctx.fillText("F_net", posBlock.x + (state.forces.net > 0 ? 30 : -50), posBlock.y - 30);
+    }
+    
+    if (ui.checks.velocity.checked && Math.abs(state.v) > 0.01) {
+        drawArrow(posBlock.x, posBlock.y, state.v * 0.5 * pxPerMeter, 0, '#10b981', 3);
+        ctx.fillStyle = '#10b981';
+        ctx.fillText("v", posBlock.x + (state.v > 0 ? 30 : -30), posBlock.y + 40);
+    }
+
+    if (ui.checks.components.checked) {
+        ctx.strokeStyle = '#64748b';
+        ctx.setLineDash([2, 4]);
+        ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(posA.x, posA.y); ctx.lineTo(posBlock.x, posBlock.y); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(posB.x, posB.y); ctx.lineTo(posBlock.x, posBlock.y); ctx.stroke();
+        ctx.setLineDash([]);
+    }
+}
+
+function drawArrow(x, y, dx, dy, color, width) {
+    const headlen = 10;
+    const angle = Math.atan2(dy, dx);
+    const len = Math.sqrt(dx*dx + dy*dy);
+    if(len < 5) return; 
+
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = width;
+
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + dx, y + dy);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(x + dx, y + dy);
+    ctx.lineTo(x + dx - headlen * Math.cos(angle - Math.PI / 6), y + dy - headlen * Math.sin(angle - Math.PI / 6));
+    ctx.lineTo(x + dx - headlen * Math.cos(angle + Math.PI / 6), y + dy - headlen * Math.sin(angle + Math.PI / 6));
+    ctx.fill();
+}
+
+// --- Charts Logic (Chart.js) ---
+let chartFxInstance, chartEtInstance;
+
+function initCharts() {
+    // Chart 1: F - x
+    const ctxFx = document.getElementById('chartFx').getContext('2d');
+    chartFxInstance = new Chart(ctxFx, {
+        type: 'scatter',
+        data: {
+            datasets: [
+                {
+                    label: '理论回复力',
+                    data: [],
+                    showLine: true,
+                    borderColor: '#cbd5e1',
+                    borderWidth: 2,
+                    pointRadius: 0,
+                    tension: 0, 
+                    hidden: true 
+                },
+                {
+                    label: '实际轨迹',
+                    data: [],
+                    showLine: true,
+                    borderColor: '#1e293b', 
+                    borderWidth: 2,
+                    pointRadius: 0,
+                    tension: 0
+                },
+                {
+                    label: '当前',
+                    data: [],
+                    pointBackgroundColor: '#ef4444',
+                    pointRadius: 5
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: false,
+            plugins: { legend: { display: false }, tooltip: {
+                callbacks: {
+                    label: (ctx) => `位移: ${ctx.parsed.x.toFixed(2)}m, 力: ${ctx.parsed.y.toFixed(1)}N`
+                }
+            }},
+            scales: {
+                x: { title: { display: true, text: '位移 x (m)' }, min: -1.1, max: 1.1 },
+                y: { title: { display: true, text: '力 F (N)' } }
+            }
+        }
+    });
+
+    // Chart 2: E - t
+    const ctxEt = document.getElementById('chartEt').getContext('2d');
+    chartEtInstance = new Chart(ctxEt, {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [
+                {
+                    label: '摩擦热 Q',
+                    data: [],
+                    borderColor: '#94a3b8',
+                    backgroundColor: '#cbd5e1',
+                    fill: true,
+                    pointRadius: 0,
+                    borderWidth: 0,
+                    tension: 0
+                },
+                {
+                    label: '动能 Ek',
+                    data: [],
+                    borderColor: '#10b981',
+                    backgroundColor: '#6ee7b7',
+                    fill: true,
+                    pointRadius: 0,
+                    borderWidth: 0,
+                    tension: 0
+                },
+                {
+                    label: '弹性势能 Ep',
+                    data: [],
+                    borderColor: '#3b82f6',
+                    backgroundColor: '#93c5fd',
+                    fill: true,
+                    pointRadius: 0,
+                    borderWidth: 0,
+                    tension: 0
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: false,
+            interaction: { mode: 'nearest', axis: 'x', intersect: false },
+            scales: {
+                x: { type: 'linear', title: { display: true, text: '时间 t (s)' }, min: 0 },
+                y: { title: { display: true, text: '能量 (J)' }, stacked: true, min: 0 }
+            },
+            plugins: {
+                legend: { position: 'top', labels: { boxWidth: 10, font: {size: 10} } }
+            }
+        }
+    });
+}
+
+function calculateTheoreticalCurve() {
+    const { d, k, L } = state.params;
+    const points = [];
+    const maxRange = 1.1; 
+    for (let x = -maxRange; x <= maxRange; x += 0.05) {
+        const l = Math.sqrt(d*d + x*x);
+        const force = -2 * k * (l - d) * (x / l);
+        points.push({x: x, y: force});
+    }
+    chartFxInstance.data.datasets[0].data = points;
+    chartFxInstance.update();
+}
+
+function toggleTheoryCurve() {
+    const isChecked = ui.checks.theory.checked;
+    chartFxInstance.data.datasets[0].hidden = !isChecked;
+    chartFxInstance.update();
+}
+
+function toggleEnergyDisplay() {
+    const isChecked = ui.checks.totalEnergy.checked;
+    ui.energyOverlay.style.display = isChecked ? 'block' : 'none';
+    updateEnergyDisplay();
+}
+
+function updateEnergyDisplay() {
+    if (ui.checks.totalEnergy.checked) {
+        ui.energyOverlay.innerText = `Total: ${state.energy.total.toFixed(2)} J`;
+    }
+}
+
+function updateCharts(reset = false) {
+    if (reset) {
+        chartFxInstance.data.datasets[1].data = [];
+        chartFxInstance.data.datasets[2].data = [{x: state.params.L, y: 0}]; 
+        
+        chartEtInstance.data.datasets[0].data = []; 
+        chartEtInstance.data.datasets[1].data = []; 
+        chartEtInstance.data.datasets[2].data = []; 
+        chartEtInstance.options.scales.x.max = 5; 
+        chartEtInstance.update();
+        return;
+    }
+
+    // Update F-x current dot
+    chartFxInstance.data.datasets[2].data = [{x: state.x, y: state.forces.net}];
+    
+    // Update F-x Trace
+    if (state.trajectory.length > 0) {
+        const trace = state.trajectory.map(p => ({x: p.x, y: p.f}));
+        chartFxInstance.data.datasets[1].data = trace;
+    }
+    
+    // Update E-t
+    const hist = state.history;
+    if (hist.length > 0) {
+        const qData = hist.map(h => ({x: h.t, y: h.q}));
+        const kData = hist.map(h => ({x: h.t, y: h.k}));
+        const pData = hist.map(h => ({x: h.t, y: h.e}));
+        
+        chartEtInstance.data.datasets[0].data = qData;
+        chartEtInstance.data.datasets[1].data = kData;
+        chartEtInstance.data.datasets[2].data = pData;
+        
+        // Auto scroll
+        if (state.t > 4) {
+            chartEtInstance.options.scales.x.min = state.t - 4;
+            chartEtInstance.options.scales.x.max = state.t + 1;
+        }
+    }
+
+    chartFxInstance.update('none'); 
+    chartEtInstance.update('none');
+}
+
+function updateVisuals() {
+    drawScene();
+    updateEnergyDisplay();
+}
+
+// --- Main Loop ---
+function loop() {
+    if (state.running) {
+        // Variable speed control
+        const steps = Math.round(state.baseStepsPerFrame * state.speedMultiplier);
+        
+        for(let i=0; i<steps; i++) {
+            if(!state.running) break; // Break if stopped inside steps
+            stepPhysics(); 
+        }
+        
+        ui.time.innerText = state.t.toFixed(2);
+        updateSeekBar(); // Update slider as we go
+        
+        updateDisplayState(); 
+        drawScene();
+        updateCharts();
+        updateEnergyDisplay(); 
+    }
+    requestAnimationFrame(loop);
+}
+
+// Init on load
+window.onload = init;
+
+</script>
+</body>
+</html>

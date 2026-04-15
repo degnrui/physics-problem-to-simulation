@@ -1,0 +1,74 @@
+{
+  "model_type": "force_analysis",
+  "research_object": "小猫",
+  "scenario": "接触到腾空的分阶段受力",
+  "forces": [
+    {
+      "name": "重力",
+      "direction": "竖直向下",
+      "magnitude": "mg",
+      "category": "field"
+    },
+    {
+      "name": "地面支持力",
+      "direction": "竖直向上",
+      "magnitude": "N",
+      "category": "contact"
+    }
+  ],
+  "force_cases": [
+    {
+      "stage_id": "stage-1",
+      "stage_label": "蹬地阶段",
+      "forces": [
+        {
+          "name": "重力",
+          "direction": "竖直向下",
+          "magnitude": "mg",
+          "category": "field"
+        },
+        {
+          "name": "地面支持力",
+          "direction": "竖直向上",
+          "magnitude": "N",
+          "category": "contact"
+        }
+      ],
+      "motion_state": "与地面接触，竖直方向合力向上，准备跃起。",
+      "focus": "识别接触力存在的前提是与地面接触。"
+    },
+    {
+      "stage_id": "stage-2",
+      "stage_label": "腾空阶段",
+      "forces": [
+        {
+          "name": "重力",
+          "direction": "竖直向下",
+          "magnitude": "mg",
+          "category": "field"
+        }
+      ],
+      "motion_state": "离地后只受重力作用，做曲线运动。",
+      "focus": "离地后地面支持力消失，只保留非接触力。"
+    }
+  ],
+  "constraints": [
+    "受力分析限于题干明示条件",
+    "默认重力方向竖直向下",
+    "默认支持面提供支持力"
+  ],
+  "motion_state": "离地后只受重力作用，做曲线运动。",
+  "core_principles": [
+    "牛顿运动定律",
+    "受力平衡分析",
+    "接触力存在条件判断"
+  ],
+  "misconceptions": [
+    "把接触力错误保留到脱离接触后的阶段",
+    "遗漏重力这一恒定存在的场力"
+  ],
+  "derived_quantities": {
+    "stage_type": "cat-jump",
+    "focus": "接触力随接触状态变化"
+  }
+}

@@ -1,0 +1,68 @@
+{
+  "model_type": "force_analysis",
+  "research_object": "足球",
+  "scenario": "飞行到触网的分阶段受力",
+  "forces": [
+    {
+      "name": "重力",
+      "direction": "竖直向下",
+      "magnitude": "mg",
+      "category": "field"
+    }
+  ],
+  "force_cases": [
+    {
+      "stage_id": "stage-1",
+      "stage_label": "飞行阶段",
+      "forces": [
+        {
+          "name": "重力",
+          "direction": "竖直向下",
+          "magnitude": "mg",
+          "category": "field"
+        }
+      ],
+      "motion_state": "忽略空气阻力时，飞行阶段只受重力。",
+      "focus": "无接触且忽略空气阻力时，仅保留重力。"
+    },
+    {
+      "stage_id": "stage-2",
+      "stage_label": "触网阶段",
+      "forces": [
+        {
+          "name": "重力",
+          "direction": "竖直向下",
+          "magnitude": "mg",
+          "category": "field"
+        },
+        {
+          "name": "球网弹力",
+          "direction": "与压缩方向相反",
+          "magnitude": "F_net",
+          "category": "contact"
+        }
+      ],
+      "motion_state": "触网后新增球网弹力，合力方向取决于接触形变。",
+      "focus": "接触后新增弹力，受力数量发生变化。"
+    }
+  ],
+  "constraints": [
+    "受力分析限于题干明示条件",
+    "默认重力方向竖直向下",
+    "默认支持面提供支持力"
+  ],
+  "motion_state": "触网后新增球网弹力，合力方向取决于接触形变。",
+  "core_principles": [
+    "牛顿运动定律",
+    "受力平衡分析",
+    "接触力存在条件判断"
+  ],
+  "misconceptions": [
+    "把接触力错误保留到脱离接触后的阶段",
+    "遗漏重力这一恒定存在的场力"
+  ],
+  "derived_quantities": {
+    "stage_type": "football-net",
+    "focus": "飞行与接触的受力对比"
+  }
+}

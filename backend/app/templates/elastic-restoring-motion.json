@@ -1,0 +1,11 @@
+{
+  "template_id": "elastic-restoring-motion-v1",
+  "scene_type": "elastic-motion",
+  "description": "用于双弹性约束和摩擦共同作用下的回复运动题。",
+  "supports": [
+    "elastic force composition",
+    "displacement parameter control",
+    "energy/work overlay",
+    "restoring force visualization"
+  ]
+}

@@ -1,11 +1,16 @@
 .DS_Store
-.env
-.env.*
 __pycache__/
+*.pyc
 .pytest_cache/
 .venv/
-node_modules/
-dist/
-build/
-*.pyc
 
+frontend/node_modules/
+frontend/dist/
+frontend/tsconfig.tsbuildinfo
+
+backend/.pytest_cache/
+backend/.env.local
+
+.artifacts/
+runs/*
+!runs/.gitkeep

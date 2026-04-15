@@ -1,0 +1,43 @@
+{
+  "dataset": "zhejiang-gaokao-force-analysis-v1",
+  "notes": [
+    "Sample prompts are adapted from publicly accessible Zhejiang gaokao problem statements.",
+    "Prompts are rewritten for internal development and simulation prototyping.",
+    "Do not treat this dataset as a verbatim archival copy of the original exam papers."
+  ],
+  "samples": [
+    {
+      "id": "force-analysis-01",
+      "year": "custom teaching adaptation",
+      "topic": "粗糙水平面受力分析",
+      "problem_path": "sample_data/problems/force-analysis-01.md",
+      "model_path": "sample_data/models/force-analysis-01.json",
+      "scene_path": "sample_data/scenes/force-analysis-01.json"
+    },
+    {
+      "id": "force-analysis-02",
+      "year": "2023-zhejiang",
+      "topic": "足球飞行与触网分阶段受力",
+      "problem_path": "sample_data/problems/force-analysis-02.md",
+      "model_path": "sample_data/models/force-analysis-02.json",
+      "scene_path": "sample_data/scenes/force-analysis-02.json",
+      "reference_url": "https://enjoyphysics.cn/ShowPaper/1493"
+    },
+    {
+      "id": "force-analysis-03",
+      "year": "2024-zhejiang-june",
+      "topic": "小猫蹬地与腾空分阶段受力",
+      "problem_path": "sample_data/problems/force-analysis-03.md",
+      "model_path": "sample_data/models/force-analysis-03.json",
+      "scene_path": "sample_data/scenes/force-analysis-03.json",
+      "reference_url": "https://zy.21cnjy.com/20842254"
+    },
+    {
+      "id": "force-analysis-04",
+      "year": "2024-zhejiang-january",
+      "topic": "运动员质点模型与动作阶段辨析",
+      "problem_path": "sample_data/problems/force-analysis-04.md",
+      "reference_url": "https://enjoyphysics.cn/ShowPaper/1552"
+    }
+  ]
+}
