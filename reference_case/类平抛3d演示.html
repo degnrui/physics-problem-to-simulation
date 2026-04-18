@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>光滑斜面类平抛运动仿真实验室 (最终交付版)</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    
+    <style>
+        :root {
+            --primary-color: #3b82f6;
+            --primary-hover: #2563eb;
+            --bg-color: #f5f7fa;
+            --panel-bg: #ffffff;
+            --text-color: #1e293b;
+            --border-color: #e2e8f0;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', sans-serif; }
+        body { background-color: var(--bg-color); color: var(--text-color); height: 100vh; overflow: hidden; display: flex; }
+
+        /* Dialog Styling Fix */
+        dialog { 
+            border: none; 
+            border-radius: 12px; 
+            padding: 0; 
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); 
+            max-width: 500px; 
+            width: 90%; 
+            z-index: 1000;
+            /* Centering Fix */
+            position: fixed;
+            inset: 0;
+            margin: auto; 
+        }
+        dialog::backdrop { background: rgba(0, 0, 0, 0.5); backdrop-filter: blur(2px); }
+        .modal-content { padding: 2rem; }
+        .modal-header { font-size: 1.5rem; font-weight: bold; margin-bottom: 1rem; color: var(--primary-color); }
+        .modal-body { line-height: 1.6; color: #475569; }
+        .modal-body ul { padding-left: 1.2rem; }
+        .modal-body li { margin-bottom: 0.5rem; }
+        .btn-modal { background: var(--primary-color); color: white; padding: 0.5rem 1.5rem; border-radius: 6px; border: none; cursor: pointer; font-weight: 600; float: right; margin-top: 1rem; }
+        .btn-modal:hover { background: var(--primary-hover); }
+
+        .container { width: 100%; height: 100%; display: grid; grid-template-columns: 1fr 340px; }
+        .visual-area { background: #111827; position: relative; display: flex; flex-direction: column; overflow: hidden; }
+        .canvas-wrapper { flex: 1; position: relative; overflow: hidden; }
+        #three-container { width: 100%; height: 100%; display: block; }
+
+        .stats-overlay { position: absolute; top: 20px; right: 20px; background: rgba(255,255,255,0.9); padding: 10px 15px; border-radius: 8px; font-family: monospace; pointer-events: none; z-index: 10; }
+        .view-controls { position: absolute; top: 20px; left: 20px; display: flex; gap: 8px; z-index: 10; }
+        .view-btn { background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: white; padding: 6px 12px; border-radius: 4px; cursor: pointer; transition: 0.2s; }
+        .view-btn:hover { background: rgba(255,255,255,0.2); }
+        
+        .label-marker { 
+            position: absolute; 
+            color: #ffffff; 
+            font-family: 'Times New Roman', serif; 
+            font-weight: bold; 
+            font-size: 1.2rem; 
+            text-shadow: 2px 2px 0px #000000;
+            pointer-events: none; 
+            transform: translate(-50%, -50%);
+            white-space: nowrap;
+            display: none; 
+            z-index: 5;
+        }
+
+        .charts-wrapper { height: 200px; background: white; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 10px; border-top: 1px solid var(--border-color); }
+        .chart-container { position: relative; width: 100%; height: 100%; }
+
+        .controls-area { background: white; padding: 20px; overflow-y: auto; z-index: 20; box-shadow: -4px 0 15px rgba(0,0,0,0.05); }
+        .header-section { margin-bottom: 20px; display: flex; justify-content: space-between; border-bottom: 2px solid #f1f5f9; padding-bottom: 10px; }
+        .header-title { font-weight: 700; font-size: 1.2rem; }
+        .control-group { margin-bottom: 20px; }
+        .group-title { font-size: 0.8rem; color: #94a3b8; font-weight: 700; text-transform: uppercase; margin-bottom: 10px; }
+        .input-row { margin-bottom: 12px; }
+        .input-label { display: flex; justify-content: space-between; font-size: 0.9rem; color: #475569; margin-bottom: 4px; }
+        .input-value { font-weight: 600; color: var(--primary-color); }
+        input[type="range"] { width: 100%; cursor: pointer; accent-color: var(--primary-color); }
+        .btn { padding: 10px; width: 100%; border-radius: 6px; border: none; font-weight: 600; cursor: pointer; margin-bottom: 8px; }
+        .btn-primary { background: var(--primary-color); color: white; }
+        .btn-secondary { background: #e2e8f0; color: #475569; }
+        .checkbox-row { display: flex; align-items: center; margin-bottom: 8px; cursor: pointer; font-size: 0.9rem; }
+        .checkbox-row input { margin-right: 8px; }
+        .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+
+    </style>
+</head>
+<body>
+
+    <dialog id="helpModal">
+        <div class="modal-content">
+            <h2 class="modal-header">操作指南</h2>
+            <div class="modal-body">
+                <p>欢迎使用<strong>光滑斜面类平抛运动仿真实验室</strong>。本工具旨在帮助您直观理解运动的分解与合成。</p>
+                <hr style="margin: 15px 0; border: 0; border-top: 1px solid #eee;">
+                <ul>
+                    <li><strong>参数探索：</strong> 拖动右侧滑块改变斜面高度、倾角或小球初速度，实时观察轨迹变化。</li>
+                    <li><strong>时间控制：</strong> 点击“开始”播放动画，拖动进度条可随时<strong>回溯</strong>到任意时刻分析状态。</li>
+                    <li><strong>视角切换：</strong> 点击左上角“正对斜面”可切换至平面视图，方便分析运动分解。</li>
+                    <li><strong>数据分析：</strong> 鼠标悬停在下方图表区域，可查看每一时刻的具体物理数值。</li>
+                </ul>
+            </div>
+            <button class="btn-modal" onclick="document.getElementById('helpModal').close()">开始实验</button>
+        </div>
+    </dialog>
+
+    <div class="container">
+        <div class="visual-area">
+            <div class="canvas-wrapper">
+                <div id="three-container"></div>
+                <div class="view-controls">
+                    <button class="view-btn" onclick="setCameraView('home')">默认</button>
+                    <button class="view-btn" onclick="setCameraView('slope_face')">正对斜面</button>
+                    <button class="view-btn" onclick="setCameraView('side')">左视图</button>
+                </div>
+                <div id="labels-container"></div>
+                <div class="stats-overlay">
+                    <div>t: <span id="val-t">0.00</span> s</div>
+                    <div>h: <span id="val-h">0.0</span> m</div>
+                    <div>v: <span id="val-v">0.0</span> m/s</div>
+                </div>
+            </div>
+            <div class="charts-wrapper">
+                <div class="chart-container"><canvas id="chartVy"></canvas></div>
+                <div class="chart-container"><canvas id="chartEk"></canvas></div>
+            </div>
+        </div>
+
+        <div class="controls-area">
+            <div class="header-section">
+                <div class="header-title">参数控制</div>
+                <button onclick="document.getElementById('helpModal').showModal()" style="border:none;background:none;cursor:pointer;font-weight:bold;color:#64748b;font-size:1.2rem;">?</button>
+            </div>
+
+            <div class="control-group">
+                <div class="group-title">播放控制</div>
+                <button id="btn-play" class="btn btn-primary">开始</button>
+                <button id="btn-reset" class="btn btn-secondary">重置</button>
+                
+                <div class="input-row" style="margin-top:10px;">
+                    <div class="input-label"><span>时间进度</span></div>
+                    <input type="range" id="progress-slider" min="0" max="100" value="0" step="0.1">
+                </div>
+
+                <div class="input-row">
+                    <div class="input-label"><span>播放速度</span><span class="input-value" id="disp-speed">1.0x</span></div>
+                    <input type="range" id="in-speed" min="0.1" max="2.0" step="0.1" value="1.0">
+                </div>
+            </div>
+
+            <div class="control-group">
+                <div class="group-title">环境</div>
+                <div class="input-row">
+                    <div class="input-label"><span>倾角 θ</span><span class="input-value" id="disp-theta">30°</span></div>
+                    <input type="range" id="in-theta" min="5" max="85" step="1" value="30">
+                </div>
+                <div class="input-row">
+                    <div class="input-label"><span>高度 h</span><span class="input-value" id="disp-h">10.0 m</span></div>
+                    <input type="range" id="in-h" min="1" max="50" step="0.5" value="10">
+                </div>
+            </div>
+
+            <div class="control-group">
+                <div class="group-title">物体</div>
+                <div class="input-row">
+                    <div class="input-label"><span>初速度 v0</span><span class="input-value" id="disp-v0">5.0 m/s</span></div>
+                    <input type="range" id="in-v0" min="1" max="20" step="0.1" value="5">
+                </div>
+                <div class="input-row">
+                    <div class="input-label"><span>质量 m</span><span class="input-value" id="disp-m">1.0 kg</span></div>
+                    <input type="range" id="in-m" min="0.1" max="10" step="0.1" value="1.0">
+                </div>
+            </div>
+
+            <div class="control-group">
+                <div class="group-title">显示</div>
+                <label class="checkbox-row"><input type="checkbox" id="check-path" checked><span class="dot" style="background:#ff3333;"></span>轨迹</label>
+                <label class="checkbox-row"><input type="checkbox" id="check-force"><span class="dot" style="background:#ff00ff;"></span>受力 (G, Fn, F合)</label>
+                <label class="checkbox-row"><input type="checkbox" id="check-vectors-v"><span class="dot" style="background:#ffd700;"></span>合速度 v</label>
+                <label class="checkbox-row"><input type="checkbox" id="check-vectors-comp"><span class="dot" style="background:#00ffff;"></span>分速度 vx, vy</label>
+                <label class="checkbox-row"><input type="checkbox" id="check-grid" checked>参考网格</label>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- 1. Physics Engine ---
+        const params = { g: 9.8, v0: 5.0, theta: 30, h: 10.0, m: 1.0, radius: 0.5 };
+        const state = { t: 0, maxT: 0, x: 0, y: 0, vx: 0, vy: 0, running: false, finished: false, trajectory: [], speed: 1.0 };
+
+        // --- 2. Three.js Globals ---
+        let scene, camera, renderer, controls;
+        let ballMesh, rampGroup, trajTube;
+        let fatArrows = { v: null, vx: null, vy: null, g: null, n: null, f: null };
+        
+        const colors = { 
+            ball: 0xf97316, 
+            traj: 0xff0000, 
+            v: 0xffd700,    
+            vx: 0x00ffff,   
+            vy: 0x00ffff,   
+            g: 0xff00ff,    
+            n: 0x8b5cf6,    
+            f: 0x00ff00     
+        };
+        const labelsContainer = document.getElementById('labels-container');
+
+        // --- 3. Initialization ---
+        function initThree() {
+            const container = document.getElementById('three-container');
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x111827);
+
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+            scene.add(ambientLight);
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            dirLight.position.set(20, 50, 20);
+            scene.add(dirLight);
+
+            camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 1000);
+            
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.localClippingEnabled = true;
+            container.appendChild(renderer.domElement);
+
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.enablePan = true;
+
+            createObjects();
+            setCameraView('home');
+            window.addEventListener('resize', onWindowResize);
+        }
+
+        function createObjects() {
+            const sphereGeo = new THREE.SphereGeometry(params.radius, 32, 32);
+            const sphereMat = new THREE.MeshPhongMaterial({ color: colors.ball, shininess: 100 });
+            ballMesh = new THREE.Mesh(sphereGeo, sphereMat);
+            scene.add(ballMesh);
+
+            rampGroup = new THREE.Group();
+            scene.add(rampGroup);
+
+            trajTube = new THREE.Group();
+            scene.add(trajTube);
+
+            updateRampGeometry();
+        }
+
+        function updateRampGeometry() {
+            while(rampGroup.children.length > 0) rampGroup.remove(rampGroup.children[0]);
+
+            const rad = params.theta * Math.PI / 180;
+            const L = params.h / Math.sin(rad); 
+            const BaseDepth = params.h / Math.tan(rad);
+            
+            const sinT = Math.sin(rad);
+            const tMaxEst = Math.sqrt(2 * params.h / params.g) / sinT;
+            const xMax = params.v0 * tMaxEst;
+            const Width = Math.max(10, xMax * 1.2); 
+
+            // Explicit Vertex Construction
+            const geom = new THREE.BufferGeometry();
+            const vertices = [
+                0, params.h, 0,      0, 0, BaseDepth,      Width, params.h, 0,
+                0, 0, BaseDepth,     Width, 0, BaseDepth,  Width, params.h, 0,
+                0,0,0,  0,params.h,0,  Width,0,0,
+                0,params.h,0, Width,params.h,0, Width,0,0,
+                0,0,0, Width,0,0, 0,0,BaseDepth,
+                Width,0,0, Width,0,BaseDepth, 0,0,BaseDepth,
+                0,0,0, 0,0,BaseDepth, 0,params.h,0,
+                Width,0,0, Width,params.h,0, Width,0,BaseDepth
+            ];
+
+            geom.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+            geom.computeVertexNormals();
+
+            const mat = new THREE.MeshLambertMaterial({ 
+                color: 0xe2e8f0, 
+                side: THREE.DoubleSide,
+                transparent: true, 
+                opacity: 0.95
+            });
+            const wedge = new THREE.Mesh(geom, mat);
+            rampGroup.add(wedge);
+
+            const edges = new THREE.EdgesGeometry(geom);
+            const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x94a3b8 }));
+            rampGroup.add(line);
+
+            if(document.getElementById('check-grid').checked) {
+                const gridPoints = [];
+                const gridColor = 0x64748b;
+                
+                const numV = 10;
+                for(let i=0; i<=numV; i++) {
+                    const t = i/numV;
+                    const x = t * Width;
+                    gridPoints.push(x, params.h, 0);
+                    gridPoints.push(x, 0, BaseDepth);
+                }
+
+                const numH = 10;
+                for(let i=0; i<=numH; i++) {
+                    const t = i/numH;
+                    const y = params.h * (1-t);
+                    const z = BaseDepth * t;
+                    gridPoints.push(0, y, z);
+                    gridPoints.push(Width, y, z);
+                }
+
+                const gridGeo = new THREE.BufferGeometry();
+                gridGeo.setAttribute('position', new THREE.Float32BufferAttribute(gridPoints, 3));
+                const gridMat = new THREE.LineBasicMaterial({ color: gridColor, transparent: true, opacity: 0.6 });
+                const gridLines = new THREE.LineSegments(gridGeo, gridMat);
+                
+                const norm = getSlopeNormal().multiplyScalar(0.01);
+                gridLines.position.copy(norm);
+                
+                rampGroup.add(gridLines);
+            }
+        }
+
+        // --- 5. Coordinate Mapping ---
+        function getSlopeNormal() {
+            const rad = params.theta * Math.PI / 180;
+            return new THREE.Vector3(0, Math.cos(rad), Math.sin(rad));
+        }
+
+        function get3DPos(physX, physY) {
+            const rad = params.theta * Math.PI / 180;
+            const start = new THREE.Vector3(0, params.h, 0);
+            const vecX = new THREE.Vector3(1, 0, 0).multiplyScalar(physX);
+            const vecY = new THREE.Vector3(0, -Math.sin(rad), Math.cos(rad)).multiplyScalar(physY);
+            return start.add(vecX).add(vecY);
+        }
+
+        // --- 6. Arrow System ---
+        function createFatArrow(name, color, text) {
+            if (fatArrows[name] && fatArrows[name].mesh) {
+                scene.remove(fatArrows[name].mesh);
+                if(fatArrows[name].label) fatArrows[name].label.remove();
+            }
+
+            const group = new THREE.Group();
+            const mat = new THREE.MeshPhongMaterial({ color: color, flatShading: false, shininess: 50 });
+
+            // Slightly thicker shaft: 0.12 radius
+            const shaftGeo = new THREE.CylinderGeometry(0.12, 0.12, 1, 12);
+            shaftGeo.rotateX(Math.PI/2); 
+            shaftGeo.translate(0, 0, 0.5); 
+            const shaft = new THREE.Mesh(shaftGeo, mat);
+            group.add(shaft);
+
+            // Head
+            const headGeo = new THREE.ConeGeometry(0.3, 0.6, 12);
+            headGeo.rotateX(Math.PI/2);
+            headGeo.translate(0, 0, 0.3); // Base at 0
+            const head = new THREE.Mesh(headGeo, mat);
+            group.add(head);
+
+            scene.add(group);
+
+            const label = document.createElement('div');
+            label.className = 'label-marker';
+            label.innerHTML = text;
+            labelsContainer.appendChild(label);
+
+            fatArrows[name] = { mesh: group, label: label, visible: false };
+        }
+
+        function initArrows() {
+            createFatArrow('v', colors.v, 'v');
+            createFatArrow('vx', colors.vx, 'v<sub>x</sub>');
+            createFatArrow('vy', colors.vy, 'v<sub>y</sub>');
+            createFatArrow('g', colors.g, 'G');
+            createFatArrow('n', colors.n, 'F<sub>N</sub>');
+            createFatArrow('f', colors.f, 'F<sub>合</sub>');
+        }
+
+        function updateVisuals() {
+            if (!fatArrows.v) return;
+
+            // Ball Position
+            const surfPos = get3DPos(state.x, state.y);
+            const ballCenter = surfPos.clone().add(getSlopeNormal().multiplyScalar(params.radius));
+            ballMesh.position.copy(ballCenter);
+
+            // Directions
+            const rad = params.theta * Math.PI / 180;
+            const dirX = new THREE.Vector3(1, 0, 0);
+            const dirSlope = new THREE.Vector3(0, -Math.sin(rad), Math.cos(rad));
+            const dirNormal = getSlopeNormal();
+            const dirGravity = new THREE.Vector3(0, -1, 0);
+
+            const updateArrow = (key, dir, len) => {
+                const arrow = fatArrows[key];
+                if (!arrow) return;
+                
+                if (len < 0.01) {
+                    arrow.mesh.visible = false;
+                    arrow.label.style.display = 'none';
+                    return;
+                }
+
+                arrow.mesh.visible = true;
+                
+                arrow.mesh.position.copy(ballCenter);
+                arrow.mesh.lookAt(ballCenter.clone().add(dir));
+
+                const HEAD_GEO_H = 0.6;
+                let shaftL = len - HEAD_GEO_H;
+
+                const shaftMesh = arrow.mesh.children[0];
+                const headMesh = arrow.mesh.children[1];
+
+                if (shaftL < 0.001) {
+                    const totalScale = len / HEAD_GEO_H;
+                    shaftMesh.visible = false;
+                    headMesh.scale.set(totalScale, totalScale, totalScale);
+                    headMesh.position.z = len / 2;
+                } else {
+                    shaftMesh.visible = true;
+                    shaftMesh.scale.set(1, 1, shaftL);
+                    headMesh.scale.set(1, 1, 1);
+                    headMesh.position.z = shaftL; 
+                }
+
+                // Update Label Position
+                const tipPos = ballCenter.clone().add(dir.clone().multiplyScalar(len));
+                const labelPos3D = tipPos.clone().add(dir.clone().multiplyScalar(0.5));
+                
+                const screenPos = labelPos3D.project(camera);
+                const x = (screenPos.x * .5 + .5) * renderer.domElement.clientWidth;
+                const y = (screenPos.y * -.5 + .5) * renderer.domElement.clientHeight;
+
+                if(screenPos.z < 1) {
+                    arrow.label.style.display = 'block';
+                    arrow.label.style.left = x + 'px';
+                    arrow.label.style.top = y + 'px';
+                } else {
+                    arrow.label.style.display = 'none';
+                }
+            };
+
+            const vScale = 1.0; 
+            const fScale = 0.35; 
+            const mg = params.m * params.g;
+
+            if (document.getElementById('check-vectors-comp').checked) {
+                updateArrow('vx', dirX, state.vx * vScale);
+                updateArrow('vy', dirSlope, state.vy * vScale);
+            } else { updateArrow('vx', dirX, 0); updateArrow('vy', dirSlope, 0); }
+            
+            if (document.getElementById('check-vectors-v').checked) {
+                const vecSum = new THREE.Vector3().copy(dirX).multiplyScalar(state.vx).add(dirSlope.clone().multiplyScalar(state.vy));
+                const totalLen = vecSum.length();
+                updateArrow('v', vecSum.normalize(), totalLen * vScale);
+            } else { updateArrow('v', dirX, 0); }
+
+            if (document.getElementById('check-force').checked) {
+                updateArrow('g', dirGravity, mg * fScale);
+                updateArrow('n', dirNormal, mg * Math.cos(rad) * fScale);
+                updateArrow('f', dirSlope, mg * Math.sin(rad) * fScale);
+            } else { updateArrow('g', dirGravity, 0); updateArrow('n', dirNormal, 0); updateArrow('f', dirSlope, 0); }
+        }
+
+        // --- 7. Chart & Playback Logic ---
+        let chartVyInst, chartEkInst;
+        function initCharts() {
+            // Configuration for smooth interaction
+            const commonOptions = { 
+                responsive: true, 
+                maintainAspectRatio: false, 
+                animation: false, 
+                interaction: {
+                    mode: 'index',
+                    intersect: false,
+                },
+                elements: {
+                    point: {
+                        radius: 0,
+                        hitRadius: 20, // Huge hit area
+                        hoverRadius: 5
+                    }
+                },
+                scales: { x: { type: 'linear', min: 0 }, y: { min: 0 } } 
+            };
+
+            chartVyInst = new Chart(document.getElementById('chartVy'), {
+                type: 'line', 
+                data: { datasets: [{ label: 'Vy (m/s)', borderColor: '#3b82f6', borderWidth: 2, data: [] }] },
+                options: commonOptions
+            });
+            chartEkInst = new Chart(document.getElementById('chartEk'), {
+                type: 'line', 
+                data: { datasets: [{ label: 'Ek (J)', borderColor: '#ef4444', borderWidth: 2, data: [] }] },
+                options: commonOptions
+            });
+        }
+
+        function resetSimulation() {
+            state.t = 0; state.x = 0; state.y = 0; state.vx = params.v0; state.vy = 0;
+            state.running = false; state.finished = false; state.trajectory = [];
+            
+            const rad = params.theta * Math.PI / 180;
+            state.maxT = Math.sqrt(2 * params.h / params.g) / Math.sin(rad);
+
+            document.getElementById('btn-play').textContent = "开始";
+            document.getElementById('progress-slider').value = 0;
+            updateUIStats();
+
+            updateRampGeometry();
+            initArrows();
+            updateVisuals();
+            updateTrajectoryTube(); 
+            
+            chartVyInst.data.datasets[0].data = [];
+            chartEkInst.data.datasets[0].data = [];
+            
+            // Remove hardcoded limits to enable adaptive scaling
+            delete chartVyInst.options.scales.x.max;
+            delete chartVyInst.options.scales.y.max;
+            delete chartEkInst.options.scales.x.max;
+            delete chartEkInst.options.scales.y.max;
+
+            chartVyInst.update();
+            chartEkInst.update();
+        }
+
+        function syncStateToTime(t) {
+            state.t = Math.max(0, Math.min(t, state.maxT));
+            if(state.t >= state.maxT) { state.finished = true; state.running = false; document.getElementById('btn-play').textContent = "重置"; }
+            else { state.finished = false; } 
+
+            const rad = params.theta * Math.PI / 180;
+            const a = params.g * Math.sin(rad);
+
+            state.x = params.v0 * state.t;
+            state.y = 0.5 * a * state.t * state.t;
+            state.vx = params.v0;
+            state.vy = a * state.t;
+
+            state.trajectory = [];
+            const steps = 50;
+            for(let i=0; i<=steps; i++) {
+                const subT = (i/steps) * state.t;
+                const subX = params.v0 * subT;
+                const subY = 0.5 * a * subT * subT;
+                state.trajectory.push({x: subX, y: subY});
+            }
+            updateTrajectoryTube();
+            updateVisuals();
+            updateUIStats();
+        }
+
+        function updateTrajectoryTube() {
+            trajTube.clear();
+            if(!document.getElementById('check-path').checked || state.trajectory.length < 2) return;
+
+            const points = [];
+            const normOff = getSlopeNormal().multiplyScalar(0.05);
+            state.trajectory.forEach(p => {
+                points.push(get3DPos(p.x, p.y).add(normOff));
+            });
+
+            const curve = new THREE.CatmullRomCurve3(points);
+            const tubeGeo = new THREE.TubeGeometry(curve, 64, 0.08, 8, false); 
+            const tubeMat = new THREE.MeshPhongMaterial({ color: colors.traj });
+            const mesh = new THREE.Mesh(tubeGeo, tubeMat);
+            trajTube.add(mesh);
+        }
+
+        function updateUIStats() {
+            const rad = params.theta * Math.PI / 180;
+            const hDrop = state.y * Math.sin(rad);
+            document.getElementById('val-t').textContent = state.t.toFixed(2);
+            document.getElementById('val-h').textContent = Math.max(0, params.h - hDrop).toFixed(1);
+            document.getElementById('val-v').textContent = Math.sqrt(state.vx**2 + state.vy**2).toFixed(1);
+            if(state.maxT > 0) document.getElementById('progress-slider').value = (state.t / state.maxT) * 100;
+        }
+
+        // --- MAIN LOOP ---
+        function animate(time) {
+            requestAnimationFrame(animate);
+            
+            // 1. Physics Update
+            if(state.running && !state.finished) {
+                const dt = 0.016 * state.speed; 
+                syncStateToTime(state.t + dt);
+                
+                const rad = params.theta * Math.PI / 180;
+                if (state.t % 0.1 < dt * 2) {
+                     chartVyInst.data.datasets[0].data.push({x: state.t, y: state.vy});
+                     chartEkInst.data.datasets[0].data.push({x: state.y * Math.sin(rad), y: 0.5 * params.m * (state.vx**2 + state.vy**2)});
+                     chartVyInst.update('none');
+                     chartEkInst.update('none');
+                }
+            }
+
+            // 2. Visual Update (ALWAYS RUN to sync labels)
+            updateVisuals();
+
+            // 3. Render
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        window.setCameraView = function(type) {
+            const rad = params.theta * Math.PI / 180;
+            const sinT = Math.sin(rad);
+            const tMax = Math.sqrt(2 * params.h / params.g) / sinT;
+            const W = Math.max(10, params.v0 * tMax * 1.2);
+            const center = get3DPos(W/2, params.h/sinT/2);
+            const dist = Math.max(params.h, W) * 2.2;
+
+            controls.target.copy(center);
+            
+            if(type === 'home') {
+                camera.position.set(center.x + dist*0.6, center.y + dist*0.4, center.z + dist*0.8);
+                camera.up.set(0, 1, 0);
+            }
+            if(type === 'slope_face') {
+                const norm = getSlopeNormal();
+                camera.position.copy(center).add(norm.multiplyScalar(dist));
+                camera.up.set(0, Math.sin(rad), -Math.cos(rad));
+            }
+            if(type === 'side') {
+                camera.position.set(center.x - dist, center.y, center.z);
+                camera.up.set(0, 1, 0);
+            }
+            controls.update();
+        }
+        
+        function onWindowResize() {
+            camera.aspect = document.getElementById('three-container').clientWidth / document.getElementById('three-container').clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(document.getElementById('three-container').clientWidth, document.getElementById('three-container').clientHeight);
+        }
+
+        document.getElementById('btn-play').onclick = () => { if(state.finished) resetSimulation(); else state.running = !state.running; document.getElementById('btn-play').textContent = state.running ? "暂停" : "继续"; };
+        document.getElementById('btn-reset').onclick = resetSimulation;
+        
+        ['in-theta', 'in-h', 'in-v0', 'in-m'].forEach(id => {
+            document.getElementById(id).addEventListener('input', (e) => {
+                const map = {'in-theta':'theta', 'in-h':'h', 'in-v0':'v0', 'in-m':'m'};
+                params[map[id]] = parseFloat(e.target.value);
+                document.getElementById(id.replace('in','disp')).textContent = params[map[id]] + (id.includes('theta')?'°':(id.includes('m')?' kg':' m'));
+                if(id === 'in-v0') document.getElementById('disp-v0').textContent += '/s';
+                resetSimulation();
+            });
+        });
+
+        document.getElementById('in-speed').addEventListener('input', (e) => {
+            state.speed = parseFloat(e.target.value);
+            document.getElementById('disp-speed').textContent = state.speed.toFixed(1) + 'x';
+        });
+
+        document.getElementById('progress-slider').addEventListener('input', (e) => {
+            state.running = false;
+            document.getElementById('btn-play').textContent = "继续";
+            const pct = parseFloat(e.target.value);
+            syncStateToTime((pct / 100) * state.maxT);
+        });
+
+        ['check-path', 'check-vectors-v', 'check-vectors-comp', 'check-force', 'check-grid'].forEach(id => {
+            document.getElementById(id).addEventListener('change', () => {
+                updateVisuals();
+                if(id === 'check-path') updateTrajectoryTube();
+            });
+        });
+
+        initThree(); initCharts(); resetSimulation(); animate(); document.getElementById('helpModal').showModal();
+
+    </script>
+</body>
+</html>

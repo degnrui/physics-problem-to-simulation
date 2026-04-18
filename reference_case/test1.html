@@ -1,0 +1,997 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>静电场与等势线仿真 (Canvas)</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; user-select: none; -webkit-user-select: none; }
+        canvas { display: block; touch-action: none; }
+
+        /* 右键菜单 */
+        #context-menu {
+            display: none;
+            position: absolute;
+            background: #2a2a2a;
+            border: 1px solid #555;
+            box-shadow: 2px 2px 10px rgba(0,0,0,0.8);
+            border-radius: 4px;
+            padding: 5px 0;
+            z-index: 1000;
+            min-width: 100px;
+        }
+        .menu-item {
+            padding: 8px 15px;
+            color: #eee;
+            cursor: pointer;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .menu-item:hover { background-color: #444; color: #fff; }
+        .menu-item.delete { color: #ff6b6b; }
+
+        /* UI 覆盖层 */
+        #ui-container {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 110px;
+            background: rgba(30, 30, 30, 0.95);
+            border-top: 1px solid #555;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 30px;
+            box-shadow: 0 -4px 20px rgba(0,0,0,0.5);
+            z-index: 10;
+        }
+
+        .tool-box {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            cursor: grab;
+            position: relative;
+            width: 60px;
+        }
+
+        .icon {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 24px;
+            font-weight: bold;
+            color: white;
+            box-shadow: 0 0 10px rgba(255,255,255,0.2);
+            transition: transform 0.1s;
+        }
+        .icon:active { transform: scale(1.1); }
+        .plus { background: radial-gradient(circle at 30% 30%, #ff6b6b, #cc0000); border: 2px solid white; text-shadow: 0 0 2px black; }
+        .minus { background: radial-gradient(circle at 30% 30%, #4da6ff, #0000cc); border: 2px solid white; text-shadow: 0 0 2px black; }
+        
+        .sensor-icon {
+            width: 40px;
+            height: 40px;
+            background: rgba(255, 200, 0, 0.2);
+            border: 2px solid #ffcc00;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .crosshair { width: 20px; height: 20px; border: 1px solid #ffcc00; border-radius: 50%; position: relative; }
+        
+        .tape-icon {
+            width: 44px;
+            height: 30px;
+            background: #aaa;
+            border: 2px solid #fff;
+            border-radius: 4px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: #333;
+            font-weight: bold;
+            font-size: 12px;
+        }
+
+        .label { color: #aaa; font-size: 12px; margin-top: 8px; text-align: center; }
+
+        #controls {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            z-index: 20;
+            background: rgba(0,0,0,0.6);
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid #444;
+            backdrop-filter: blur(4px);
+        }
+
+        button.btn {
+            background: #333;
+            color: white;
+            border: 1px solid #666;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+        button.btn:hover { background: #444; }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            color: #ddd;
+            font-size: 13px;
+        }
+        .checkbox-label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+        .radio-label { display: flex; align-items: center; gap: 6px; cursor: pointer; margin-left: 5px;}
+        
+        #property-panel {
+            position: absolute;
+            display: none;
+            background: rgba(20, 20, 20, 0.95);
+            border: 1px solid #666;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.8);
+            color: white;
+            min-width: 220px;
+            z-index: 100;
+            backdrop-filter: blur(5px);
+        }
+        
+        #property-panel h4 { margin: 0 0 10px 0; font-size: 14px; color: #ccc; border-bottom: 1px solid #444; padding-bottom: 5px; }
+        .prop-row { margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; }
+        input[type=range] { width: 100px; }
+        
+        /* 提示层 */
+        .tooltip {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: #888;
+            pointer-events: none;
+            z-index: 5;
+            line-height: 1.5;
+        }
+    </style>
+</head>
+<body>
+
+<div class="tooltip">
+    操作指南：<br>
+    1. <b>左键拖拽</b> 物体移动。<br>
+    2. <b>点击电荷</b> 修改电量。<br>
+    3. <b>右键点击</b> 物体/等势线 可删除。<br>
+    4. 传感器静止时点击“✎”绘制等势线。
+</div>
+
+<div id="controls">
+    <div class="control-group">
+        <div style="font-weight:bold; margin-bottom:2px; color:#fff;">显示设置</div>
+        <label class="checkbox-label">
+            <input type="checkbox" id="gridCheck" checked> 显示电场
+        </label>
+        <label class="checkbox-label">
+            <input type="checkbox" id="decayCheck" checked> 场强透明度衰减
+        </label>
+        
+        <div style="height:1px; background:#555; margin:4px 0;"></div>
+        <div style="font-size:12px; color:#aaa; margin-bottom:2px;">电场模式:</div>
+        <label class="radio-label">
+            <input type="radio" name="fieldType" value="grid" checked> 离散网格 (箭头)
+        </label>
+        <label class="radio-label">
+            <input type="radio" name="fieldType" value="lines"> 连续电场线
+        </label>
+    </div>
+    <div style="height:5px;"></div>
+    <button class="btn" onclick="clearAll()">重置场景</button>
+    <button class="btn" onclick="clearLines()">清除等势线</button>
+</div>
+
+<!-- 属性面板 (仅用于调整数值) -->
+<div id="property-panel">
+    <h4 id="prop-title">物体属性</h4>
+    <div id="prop-charge-ctrl" class="prop-row">
+        <label>电量 (nC): <span id="charge-val">0</span></label>
+        <input type="range" id="charge-slider" min="-10" max="10" step="1">
+    </div>
+</div>
+
+<!-- 右键菜单 -->
+<div id="context-menu">
+    <div class="menu-item delete" onclick="deleteContextTarget()">
+        <span>🗑️</span> 删除物体
+    </div>
+</div>
+
+<canvas id="simCanvas"></canvas>
+
+<div id="ui-container">
+    <div class="tool-box" onmousedown="startDragNew(1)" ontouchstart="startDragNew(1)">
+        <div class="icon plus">+</div>
+        <div class="label">+1 nC</div>
+    </div>
+    <div class="tool-box" onmousedown="startDragNew(-1)" ontouchstart="startDragNew(-1)">
+        <div class="icon minus">-</div>
+        <div class="label">-1 nC</div>
+    </div>
+    <div class="tool-box" onmousedown="startDragNewSensor()" ontouchstart="startDragNewSensor()">
+        <div class="sensor-icon"><div class="crosshair" style="border-color: #ffcc00; color:#ffcc00;">+</div></div>
+        <div class="label">传感器</div>
+    </div>
+    <div class="tool-box" onmousedown="startDragNewTape()" ontouchstart="startDragNewTape()">
+        <div class="tape-icon">📏</div>
+        <div class="label">卷尺</div>
+    </div>
+</div>
+
+<script>
+{
+    const canvas = document.getElementById('simCanvas');
+    const ctx = canvas.getContext('2d');
+    const propPanel = document.getElementById('property-panel');
+    const chargeSlider = document.getElementById('charge-slider');
+    const chargeValDisplay = document.getElementById('charge-val');
+    const contextMenu = document.getElementById('context-menu');
+
+    // --- 物理常量 ---
+    const PIXELS_PER_METER = 1000;
+    const K_VISUAL = 9000; 
+    
+    const GRID_STEP = 35; 
+
+    // --- 状态管理 ---
+    let width, height;
+    let charges = []; // {x, y, q}
+    let sensors = []; // {x, y}
+    let tapes = [];   // {x1, y1, x2, y2}
+    let equipotentialLines = []; 
+    let fieldType = 'grid'; // 'grid' | 'lines'
+
+    // 交互状态
+    let draggingItem = null;
+    let selectedItem = null; 
+    let contextTarget = null; // 右键选中的目标
+    let dragOffset = { x: 0, y: 0 };
+    let mouse = { x: 0, y: 0 };
+    let hoverLineIndex = -1;
+
+    function resize() {
+        width = window.innerWidth;
+        height = window.innerHeight;
+        canvas.width = width;
+        canvas.height = height;
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    // --- 物理计算 ---
+
+    function getElectricField(x, y) {
+        let Ex = 0, Ey = 0;
+        for (const c of charges) {
+            const dx = x - c.x;
+            const dy = y - c.y;
+            const r2 = dx*dx + dy*dy;
+            if (r2 < 25) continue; 
+            const r = Math.sqrt(r2);
+            const E = (K_VISUAL * 0.5) * c.q / r2; 
+            Ex += E * (dx / r);
+            Ey += E * (dy / r);
+        }
+        return { Ex, Ey };
+    }
+
+    function getPotential(x, y) {
+        let V = 0;
+        for (const c of charges) {
+            const dx = x - c.x;
+            const dy = y - c.y;
+            const r_px = Math.sqrt(dx*dx + dy*dy);
+            V += K_VISUAL * c.q / Math.max(r_px, 10); 
+        }
+        return V;
+    }
+
+    // --- 几何工具 ---
+    function distToSegment(px, py, x1, y1, x2, y2) {
+        const l2 = (x1-x2)**2 + (y1-y2)**2;
+        if (l2 === 0) return Math.hypot(px-x1, py-y1);
+        let t = ((px-x1)*(x2-x1) + (py-y1)*(y2-y1)) / l2;
+        t = Math.max(0, Math.min(1, t));
+        return Math.hypot(px - (x1 + t*(x2-x1)), py - (y1 + t*(y2-y1)));
+    }
+
+    // 优化的碰撞检测：现在即使是曲线绘制，我们仍然对原始离散点做检测
+    function getHoverLine(mx, my) {
+        for(let i=0; i<equipotentialLines.length; i++) {
+            const path = equipotentialLines[i];
+            for(let j=0; j<path.length-1; j+=2) { 
+                const d = distToSegment(mx, my, path[j].x, path[j].y, path[j+1].x, path[j+1].y);
+                if (d < 8) return i; 
+            }
+        }
+        return -1;
+    }
+
+    // --- 渲染函数 ---
+
+    function drawArrow(x, y, Ex, Ey, isLineMode = false) {
+        const Emag = Math.sqrt(Ex*Ex + Ey*Ey);
+        
+        // 透明度计算逻辑
+        let alpha = 1.0;
+        const decayEnabled = document.getElementById('decayCheck').checked;
+
+        // 如果开启衰减，且场强极小，则不绘制
+        if (decayEnabled && Emag < 0.1) return;
+        // 如果关闭衰减，我们希望看到所有方向，除非场强几乎为0（避免NaN）
+        if (!decayEnabled && Emag < 1e-6) return;
+
+        if (!isLineMode && decayEnabled) {
+            // 网格模式下且开启了衰减：使用对数透明度
+            const intensity = Math.min(1, Math.log10(Emag * 2 + 1) / 2.5); 
+            alpha = Math.max(0.15, intensity);
+        } else if (!isLineMode && !decayEnabled) {
+            // 网格模式但关闭了衰减：统一亮度
+            alpha = 0.8;
+        }
+
+        const angle = Math.atan2(Ey, Ex);
+        const len = 16;
+
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(angle);
+        ctx.globalAlpha = alpha;
+        ctx.strokeStyle = '#fff';
+        ctx.fillStyle = '#fff';
+        
+        ctx.beginPath();
+        // 如果是连续场线模式，只画箭头头
+        if (isLineMode) {
+            ctx.moveTo(-4, -3);
+            ctx.lineTo(4, 0);
+            ctx.lineTo(-4, 3);
+        } else {
+            ctx.moveTo(-len/2, 0);
+            ctx.lineTo(len/2, 0);
+            ctx.lineTo(len/2 - 4, -3);
+            ctx.lineTo(len/2 - 4, 3);
+            ctx.lineTo(len/2, 0);
+        }
+        ctx.stroke();
+        if (isLineMode) ctx.fill(); 
+        ctx.restore();
+    }
+
+    function drawFieldLines() {
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1;
+        
+        const decayEnabled = document.getElementById('decayCheck').checked;
+        if (decayEnabled) {
+            ctx.globalAlpha = 0.6; // 默认较淡
+        } else {
+            ctx.globalAlpha = 0.9; // 较亮
+        }
+
+        const linesToDraw = [];
+        
+        charges.forEach(c => {
+            const numLines = Math.abs(c.q) * 4; 
+            const startRadius = 20;
+            const direction = c.q > 0 ? 1 : -1; 
+            
+            for(let i=0; i<numLines; i++) {
+                const angle = (Math.PI * 2 * i) / numLines;
+                const sx = c.x + Math.cos(angle) * startRadius;
+                const sy = c.y + Math.sin(angle) * startRadius;
+                linesToDraw.push({x: sx, y: sy, dir: direction});
+            }
+        });
+
+        linesToDraw.forEach(pt => {
+            ctx.beginPath();
+            ctx.moveTo(pt.x, pt.y);
+            
+            let cx = pt.x, cy = pt.y;
+            const step = 5; 
+            const maxSteps = 400; 
+            
+            for(let k=0; k<maxSteps; k++) {
+                const { Ex, Ey } = getElectricField(cx, cy);
+                const mag = Math.hypot(Ex, Ey);
+                if(mag < 0.001) break;
+
+                const dx = (Ex / mag) * pt.dir; 
+                const dy = (Ey / mag) * pt.dir;
+
+                cx += dx * step;
+                cy += dy * step;
+
+                ctx.lineTo(cx, cy);
+
+                let hit = false;
+                for(const c of charges) {
+                    if((cx-c.x)**2 + (cy-c.y)**2 < 400) { hit = true; break; }
+                }
+                if(hit || cx < 0 || cx > width || cy < 0 || cy > height) break;
+
+                // 画箭头
+                if (k % 20 === 10) {
+                    ctx.stroke(); 
+                    ctx.beginPath(); 
+                    drawArrow(cx, cy, Ex, Ey, true);
+                    ctx.beginPath(); 
+                    ctx.moveTo(cx, cy);
+                }
+            }
+            ctx.stroke();
+        });
+        ctx.globalAlpha = 1.0;
+    }
+
+    // 关键修复：使用二次贝塞尔曲线 (Quadratic Curve) 连接离散点
+    function drawEquipotentialLines() {
+        equipotentialLines.forEach((line, idx) => {
+            if (line.length < 3) return; // 至少3个点才能平滑
+
+            ctx.beginPath();
+            
+            // 移动到第一个点
+            ctx.moveTo(line[0].x, line[0].y);
+            
+            // 使用中点插值法进行平滑绘制
+            for (let i = 1; i < line.length - 2; i++) {
+                const xc = (line[i].x + line[i + 1].x) / 2;
+                const yc = (line[i].y + line[i + 1].y) / 2;
+                ctx.quadraticCurveTo(line[i].x, line[i].y, xc, yc);
+            }
+            
+            // 处理最后两个点
+            ctx.quadraticCurveTo(
+                line[line.length - 2].x, 
+                line[line.length - 2].y, 
+                line[line.length - 1].x, 
+                line[line.length - 1].y
+            );
+
+            if (idx === hoverLineIndex) {
+                ctx.strokeStyle = '#ff3333';
+                ctx.lineWidth = 3;
+            } else {
+                ctx.strokeStyle = '#00ff00';
+                ctx.lineWidth = 1.5;
+            }
+            ctx.globalAlpha = 0.8;
+            ctx.stroke();
+            ctx.globalAlpha = 1.0;
+        });
+    }
+
+    function drawTapeBody(t) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(t.x1, t.y1);
+        ctx.lineTo(t.x2, t.y2);
+        ctx.strokeStyle = '#aaa';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 5]);
+        ctx.stroke();
+        
+        // 标签
+        const midX = (t.x1 + t.x2) / 2;
+        const midY = (t.y1 + t.y2) / 2;
+        const distM = Math.hypot(t.x2-t.x1, t.y2-t.y1) / PIXELS_PER_METER;
+        const label = distM.toFixed(2) + ' m';
+        
+        ctx.translate(midX, midY);
+        ctx.fillStyle = 'rgba(0,0,0,0.7)';
+        ctx.fillRect(-30, -10, 60, 20);
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 14px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(label, 0, 1);
+        ctx.restore();
+    }
+
+    function drawTapeEndpoints(t) {
+        [ {x: t.x1, y: t.y1}, {x: t.x2, y: t.y2} ].forEach(p => {
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, 8, 0, Math.PI*2);
+            ctx.fillStyle = '#ccc';
+            ctx.fill();
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(p.x-4, p.y); ctx.lineTo(p.x+4, p.y);
+            ctx.moveTo(p.x, p.y-4); ctx.lineTo(p.x, p.y+4);
+            ctx.lineWidth = 1;
+            ctx.stroke();
+        });
+    }
+
+    function drawCharge(c) {
+        const isSelected = selectedItem && selectedItem.obj === c;
+        
+        ctx.beginPath();
+        ctx.arc(c.x, c.y, 18, 0, Math.PI * 2);
+        
+        let baseColor;
+        if (c.q > 0) baseColor = `rgb(255, ${Math.max(0, 100 - c.q*10)}, ${Math.max(0, 100 - c.q*10)})`;
+        else if (c.q < 0) baseColor = `rgb(${Math.max(0, 100 + c.q*10)}, ${Math.max(0, 100 + c.q*10)}, 255)`;
+        else baseColor = '#888';
+
+        const grad = ctx.createRadialGradient(c.x - 6, c.y - 6, 2, c.x, c.y, 18);
+        grad.addColorStop(0, '#fff');
+        grad.addColorStop(0.3, baseColor);
+        grad.addColorStop(1, c.q > 0 ? '#500' : (c.q < 0 ? '#005' : '#333'));
+        
+        ctx.fillStyle = grad;
+        ctx.fill();
+        
+        if (isSelected) {
+            ctx.strokeStyle = '#ffff00';
+            ctx.lineWidth = 3;
+        } else {
+            ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+            ctx.lineWidth = 1;
+        }
+        ctx.stroke();
+
+        ctx.fillStyle = 'white';
+        ctx.font = 'bold 14px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(c.q > 0 ? `+${c.q}` : c.q, c.x, c.y + 1);
+    }
+
+    function drawSensor(s) {
+        const V = getPotential(s.x, s.y);
+        const isSelected = selectedItem && selectedItem.obj === s;
+
+        // Draw Sensor Body
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, 10, 0, Math.PI*2);
+        ctx.fillStyle = 'rgba(255, 200, 0, 0.3)';
+        ctx.fill();
+        ctx.strokeStyle = isSelected ? '#fff' : '#ffcc00';
+        ctx.lineWidth = isSelected ? 3 : 2;
+        ctx.stroke();
+        
+        ctx.beginPath();
+        ctx.moveTo(s.x - 14, s.y); ctx.lineTo(s.x + 14, s.y);
+        ctx.moveTo(s.x, s.y - 14); ctx.lineTo(s.x, s.y + 14);
+        ctx.strokeStyle = '#ffcc00';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // Voltage Display (Optimized)
+        const text = V.toFixed(1) + ' V';
+        ctx.font = 'bold 16px monospace'; 
+        const measure = ctx.measureText(text);
+        
+        // Move display further away
+        const padding = 8;
+        const boxH = 26;
+        const boxW = measure.width + padding * 2;
+        const boxX = s.x + 25; 
+        const boxY = s.y - 40;
+        
+        ctx.fillStyle = 'rgba(0,0,0,0.8)';
+        ctx.fillRect(boxX, boxY, boxW, boxH);
+        
+        ctx.fillStyle = '#ffcc00';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(text, boxX + padding, boxY + boxH/2 + 1);
+
+        // Pencil Tool - Hover Logic
+        const dist = Math.hypot(mouse.x - s.x, mouse.y - s.y);
+        if (dist < 45) { // Show on hover
+            ctx.fillStyle = '#444';
+            ctx.beginPath();
+            ctx.arc(s.x - 20, s.y - 20, 12, 0, Math.PI*2);
+            ctx.fill();
+            ctx.strokeStyle = '#999';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+            
+            ctx.fillStyle = '#fff';
+            ctx.font = '12px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('✎', s.x - 20, s.y - 19);
+        }
+    }
+
+    function render() {
+        ctx.clearRect(0, 0, width, height);
+
+        // 1. 电场 (底层)
+        if (document.getElementById('gridCheck').checked && charges.length > 0) {
+            if (fieldType === 'grid') {
+                for (let x = GRID_STEP/2; x < width; x += GRID_STEP) {
+                    for (let y = GRID_STEP/2; y < height; y += GRID_STEP) {
+                        const { Ex, Ey } = getElectricField(x, y);
+                        drawArrow(x, y, Ex, Ey, false);
+                    }
+                }
+            } else {
+                drawFieldLines();
+            }
+        }
+
+        // 2. 等势线 (现在是平滑曲线)
+        drawEquipotentialLines();
+
+        // 3. 卷尺尺身 (在电荷下层)
+        tapes.forEach(t => drawTapeBody(t));
+
+        // 4. 电荷 (中层)
+        charges.forEach(c => drawCharge(c));
+
+        // 5. 传感器 (上层)
+        sensors.forEach(s => drawSensor(s));
+
+        // 6. 卷尺端点 (最上层！)
+        tapes.forEach(t => drawTapeEndpoints(t));
+
+        // 7. 拖拽预览
+        if (draggingItem && draggingItem.isNew) {
+            ctx.beginPath();
+            if (draggingItem.type === 'charge') {
+                ctx.arc(mouse.x, mouse.y, 18, 0, Math.PI*2);
+                ctx.fillStyle = draggingItem.val > 0 ? '#ff4444' : '#4444ff';
+                ctx.globalAlpha = 0.5;
+                ctx.fill();
+            } else if (draggingItem.type === 'sensor') {
+                ctx.arc(mouse.x, mouse.y, 10, 0, Math.PI*2);
+                ctx.strokeStyle = '#ffcc00';
+                ctx.stroke();
+            } else if (draggingItem.type === 'tape') {
+                ctx.rect(mouse.x - 20, mouse.y - 10, 40, 20);
+                ctx.strokeStyle = '#aaa';
+                ctx.stroke();
+            }
+            ctx.globalAlpha = 1;
+        }
+
+        updatePropertyPanelPos();
+        requestAnimationFrame(render);
+    }
+
+    // --- 交互处理 ---
+
+    function showProperties(item) {
+        selectedItem = item;
+        // 只有电荷需要属性面板来调数值
+        if (item.type === 'charge') {
+            propPanel.style.display = 'block';
+            chargeSlider.value = item.obj.q;
+            chargeValDisplay.innerText = item.obj.q;
+            updatePropertyPanelPos();
+        } else {
+            propPanel.style.display = 'none';
+        }
+    }
+
+    function hideProperties() {
+        selectedItem = null;
+        propPanel.style.display = 'none';
+    }
+
+    function updatePropertyPanelPos() {
+        if (!selectedItem || propPanel.style.display === 'none') return;
+        const obj = selectedItem.obj;
+        let left = obj.x + 30;
+        let top = obj.y - 50;
+        
+        if (left + 220 > width) left = obj.x - 230;
+        if (top < 10) top = 10;
+        if (top + 100 > height) top = height - 120;
+
+        propPanel.style.left = left + 'px';
+        propPanel.style.top = top + 'px';
+    }
+
+    function getPointerPos(e) {
+        if (e.touches) return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        return { x: e.clientX, y: e.clientY };
+    }
+
+    // 查找点击的物体
+    function findObjectAt(x, y) {
+        // 卷尺端点优先
+        for(const t of tapes) {
+            if (Math.hypot(x-t.x1, y-t.y1) < 15) return { type:'tape', obj:t, handle:'p1' };
+            if (Math.hypot(x-t.x2, y-t.y2) < 15) return { type:'tape', obj:t, handle:'p2' };
+            const mx=(t.x1+t.x2)/2, my=(t.y1+t.y2)/2;
+            if (Math.hypot(x-mx, y-my) < 20) return { type:'tape', obj:t, handle:'body' };
+        }
+        // 传感器
+        for(const s of sensors) {
+            if (Math.hypot(x-s.x, y-s.y) < 20) return { type:'sensor', obj:s };
+        }
+        // 电荷
+        for(const c of charges) {
+            if (Math.hypot(x-c.x, y-c.y) < 20) return { type:'charge', obj:c };
+        }
+        return null;
+    }
+
+    // 右键菜单逻辑
+    canvas.addEventListener('contextmenu', e => {
+        e.preventDefault();
+        const pos = getPointerPos(e);
+        const rect = canvas.getBoundingClientRect();
+        const cx = pos.x - rect.left;
+        const cy = pos.y - rect.top;
+
+        // 优先检查是否有悬停的等势线
+        const lineIdx = getHoverLine(cx, cy);
+        
+        const target = findObjectAt(cx, cy);
+        
+        if (target) {
+            contextTarget = target;
+            contextMenu.style.display = 'block';
+            contextMenu.style.left = e.clientX + 'px';
+            contextMenu.style.top = e.clientY + 'px';
+        } else if (lineIdx !== -1) {
+            // 如果点中了等势线
+            contextTarget = { type: 'line', index: lineIdx };
+            contextMenu.style.display = 'block';
+            contextMenu.style.left = e.clientX + 'px';
+            contextMenu.style.top = e.clientY + 'px';
+        } else {
+            contextMenu.style.display = 'none';
+        }
+    });
+
+    // 点击其他地方关闭菜单
+    window.addEventListener('click', () => {
+        contextMenu.style.display = 'none';
+    });
+
+    // 右键菜单删除功能
+    window.deleteContextTarget = function() {
+        if (!contextTarget) return;
+        const { type, obj, index } = contextTarget;
+        if (type === 'charge') {
+            const idx = charges.indexOf(obj);
+            if (idx > -1) { charges.splice(idx, 1); equipotentialLines = []; }
+        } else if (type === 'sensor') {
+            const idx = sensors.indexOf(obj);
+            if (idx > -1) sensors.splice(idx, 1);
+        } else if (type === 'tape') {
+            const idx = tapes.indexOf(obj);
+            if (idx > -1) tapes.splice(idx, 1);
+        } else if (type === 'line') {
+            if (index > -1 && index < equipotentialLines.length) {
+                equipotentialLines.splice(index, 1);
+                hoverLineIndex = -1;
+            }
+        }
+        contextMenu.style.display = 'none';
+        hideProperties();
+    }
+
+    // 左键逻辑
+    function handleStart(e, isTouch) {
+        if(e.button === 2) return; // 忽略右键
+        
+        const pos = getPointerPos(e);
+        mouse.x = pos.x; mouse.y = pos.y;
+        
+        // 1. 等势线删除 (已移除左键点击删除功能，改为仅右键删除)
+        // const lineIdx = getHoverLine(pos.x, pos.y);
+        // if (lineIdx !== -1) {
+        //     equipotentialLines.splice(lineIdx, 1);
+        //     hoverLineIndex = -1;
+        //     return;
+        // }
+
+        // 2. 传感器绘制按钮
+        for (const s of sensors) {
+            if (Math.hypot(pos.x - (s.x-20), pos.y - (s.y-20)) < 15) {
+                traceEquipotential(s.x, s.y);
+                return;
+            }
+        }
+
+        // 3. 查找并拖拽物体
+        const hit = findObjectAt(pos.x, pos.y);
+        if (hit) {
+            draggingItem = { ...hit, isNew: false };
+            
+            // 计算偏移
+            if (hit.type === 'tape') {
+                if (hit.handle === 'body') {
+                    dragOffset = { dx1: hit.obj.x1 - pos.x, dy1: hit.obj.y1 - pos.y, dx2: hit.obj.x2 - pos.x, dy2: hit.obj.y2 - pos.y };
+                } 
+                // 端点无需偏移，直接吸附鼠标
+            } else {
+                dragOffset = { x: hit.obj.x - pos.x, y: hit.obj.y - pos.y };
+            }
+
+            showProperties(draggingItem);
+            return;
+        }
+
+        // 点击空白处
+        if (!e.target.closest('#property-panel') && !e.target.closest('.tool-box') && !e.target.closest('#controls')) {
+            hideProperties();
+        }
+    }
+
+    function handleMove(e) {
+        const pos = getPointerPos(e);
+        mouse.x = pos.x; mouse.y = pos.y;
+
+        if (!draggingItem) {
+            hoverLineIndex = getHoverLine(pos.x, pos.y);
+        } else {
+            hoverLineIndex = -1;
+            e.preventDefault();
+            propPanel.style.display = 'none'; // 拖拽时隐藏面板
+
+            if (!draggingItem.isNew) {
+                if (draggingItem.type === 'tape') {
+                    const t = draggingItem.obj;
+                    if (draggingItem.handle === 'p1') {
+                        t.x1 = pos.x; t.y1 = pos.y;
+                    } else if (draggingItem.handle === 'p2') {
+                        t.x2 = pos.x; t.y2 = pos.y;
+                    } else if (draggingItem.handle === 'body') {
+                        t.x1 = pos.x + dragOffset.dx1;
+                        t.y1 = pos.y + dragOffset.dy1;
+                        t.x2 = pos.x + dragOffset.dx2;
+                        t.y2 = pos.y + dragOffset.dy2;
+                    }
+                } else {
+                    draggingItem.obj.x = pos.x + dragOffset.x;
+                    draggingItem.obj.y = pos.y + dragOffset.y;
+                }
+            }
+        }
+    }
+
+    function handleEnd(e) {
+        if (!draggingItem) return;
+
+        if (!draggingItem.isNew) {
+            // 只是移动，结束
+            showProperties(draggingItem);
+            if (draggingItem.type === 'charge') equipotentialLines = []; // 场变了
+        } else {
+            // 新建物体
+            const isOverUI = mouse.y > height - 110;
+            if (!isOverUI) {
+                if (draggingItem.type === 'charge') {
+                    const newCharge = { x: mouse.x, y: mouse.y, q: draggingItem.val };
+                    charges.push(newCharge);
+                    equipotentialLines = [];
+                    showProperties({ type: 'charge', obj: newCharge });
+                } else if (draggingItem.type === 'sensor') {
+                    const newSensor = { x: mouse.x, y: mouse.y };
+                    sensors.push(newSensor);
+                } else if (draggingItem.type === 'tape') {
+                    const newTape = { x1: mouse.x-50, y1: mouse.y, x2: mouse.x+50, y2: mouse.y };
+                    tapes.push(newTape);
+                }
+            }
+        }
+        draggingItem = null;
+    }
+
+    // 优化的等势线算法：减小步长以提高精度
+    function traceEquipotential(startX, startY) {
+        const targetV = getPotential(startX, startY);
+        if (Math.abs(targetV) > 1000) return;
+        const path = [{x: startX, y: startY}];
+        
+        // 关键修改：减小步长，增加步数
+        // 之前的 stepSize=5, maxSteps=800
+        // 现在 stepSize=2.5, maxSteps=2000
+        const stepSize = 2.5; 
+        const maxSteps = 2000; 
+        
+        [1, -1].forEach(direction => {
+            let cx = startX, cy = startY;
+            for(let i=0; i<maxSteps; i++) {
+                const { Ex, Ey } = getElectricField(cx, cy);
+                const Emag = Math.sqrt(Ex*Ex + Ey*Ey);
+                if (Emag < 0.001) break;
+                
+                // 1. 切线步进
+                let dx = -Ey / Emag;
+                let dy = Ex / Emag;
+                cx += dx * stepSize * direction;
+                cy += dy * stepSize * direction;
+                
+                // 2. 法向修正
+                const currentV = getPotential(cx, cy);
+                const Vdiff = currentV - targetV; 
+                // 防止过冲，可以在修正量上乘一个阻尼系数 (0.8~1.0)
+                const correctionMag = (Vdiff / Emag); 
+                cx += (Ex / Emag) * correctionMag;
+                cy += (Ey / Emag) * correctionMag;
+
+                // 边界检查
+                if (cx < 0 || cx > width || cy < 0 || cy > height) break;
+                
+                let tooClose = false;
+                for(let c of charges) if((cx-c.x)**2 + (cy-c.y)**2 < 400) { tooClose = true; break; }
+                if(tooClose) break;
+
+                // 闭合检测 (稍微放宽一点判定范围，因为步长变小了)
+                if (i > 40) {
+                    const distStart = Math.hypot(cx - startX, cy - startY);
+                    if (distStart < stepSize * 2.0) {
+                        if (direction === 1) path.push({x: startX, y: startY});
+                        break;
+                    }
+                }
+                
+                if (direction === 1) path.push({x: cx, y: cy});
+                else path.unshift({x: cx, y: cy});
+            }
+        });
+        equipotentialLines.push(path);
+    }
+
+    // UI 绑定
+    window.startDragNew = (q) => { draggingItem = { type: 'charge', val: q, isNew: true }; hideProperties(); };
+    window.startDragNewSensor = () => { draggingItem = { type: 'sensor', isNew: true }; hideProperties(); };
+    window.startDragNewTape = () => { draggingItem = { type: 'tape', isNew: true }; hideProperties(); };
+    window.clearAll = () => { charges = []; sensors = []; tapes = []; equipotentialLines = []; hideProperties(); };
+    window.clearLines = () => { equipotentialLines = []; };
+
+    chargeSlider.addEventListener('input', (e) => {
+        if (selectedItem && selectedItem.type === 'charge') {
+            const newQ = parseInt(e.target.value);
+            if (newQ === 0) return; 
+            selectedItem.obj.q = newQ;
+            chargeValDisplay.innerText = newQ;
+            equipotentialLines = [];
+        }
+    });
+
+    // 监听显示模式切换
+    document.querySelectorAll('input[name="fieldType"]').forEach(radio => {
+        radio.addEventListener('change', (e) => {
+            fieldType = e.target.value;
+        });
+    });
+
+    canvas.addEventListener('mousedown', e => handleStart(e, false));
+    canvas.addEventListener('mousemove', handleMove);
+    canvas.addEventListener('mouseup', handleEnd);
+    canvas.addEventListener('touchstart', e => handleStart(e, true), {passive: false});
+    canvas.addEventListener('touchmove', handleMove, {passive: false});
+    canvas.addEventListener('touchend', handleEnd);
+
+    render();
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,1064 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>地球自转与重力仿真 (Fixed Projection)</title>
+    <style>
+        :root {
+            --bg-dark: #0f1115;
+            --panel-bg: #1a1d23;
+            --text-main: #e0e6ed;
+            --text-dim: #9aa5b1;
+            --accent: #3b82f6;
+            --accent-hover: #2563eb;
+            --border: #2d3748;
+            --col-grav: #ef4444; /* Red */
+            --col-fn: #10b981;   /* Green */
+            --col-g: #3b82f6;    /* Blue */
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            user-select: none;
+        }
+
+        /* Modal / Dialog */
+        dialog {
+            background: var(--panel-bg);
+            color: var(--text-main);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 2rem;
+            max-width: 500px;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+            z-index: 100;
+        }
+        dialog::backdrop {
+            background: rgba(0, 0, 0, 0.7);
+        }
+        dialog h2 { margin-top: 0; color: var(--accent); }
+        dialog button {
+            background: var(--accent);
+            color: white;
+            border: none;
+            padding: 0.5rem 1.5rem;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-top: 1rem;
+            font-weight: bold;
+        }
+
+        /* Layout Grid */
+        #app-container {
+            display: grid;
+            grid-template-columns: 75% 25%;
+            width: 100%;
+            height: 100vh;
+            max-width: 1920px;
+        }
+
+        /* Left Column */
+        #left-col {
+            display: grid;
+            grid-template-rows: 1fr auto;
+            border-right: 1px solid var(--border);
+            position: relative;
+        }
+
+        /* Canvas Container */
+        #sim-canvas-container {
+            position: relative;
+            background: radial-gradient(circle at center, #1e2330 0%, #0f1115 100%);
+            overflow: hidden;
+            cursor: grab;
+        }
+        #sim-canvas-container:active {
+            cursor: grabbing;
+        }
+        
+        /* Camera Quick Views */
+        #cam-controls {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            z-index: 10;
+        }
+        .cam-btn {
+            background: rgba(26, 29, 35, 0.8);
+            border: 1px solid var(--border);
+            color: var(--text-main);
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            backdrop-filter: blur(4px);
+            transition: all 0.2s;
+            text-align: center;
+        }
+        .cam-btn:hover {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: white;
+        }
+
+        #view-hint {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.4);
+            color: var(--text-dim);
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            pointer-events: none;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        /* Mode Switch Overlay */
+        #mode-switch-container {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 20;
+        }
+        .mode-btn {
+            background: rgba(59, 130, 246, 0.9);
+            color: white;
+            border: 1px solid var(--accent-hover);
+            padding: 10px 20px;
+            border-radius: 6px;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .mode-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 8px rgba(0,0,0,0.4);
+        }
+        .mode-btn.active {
+            background: #10b981;
+            border-color: #059669;
+        }
+
+        /* Dynamic Bar Charts Overlay */
+        #bar-charts-overlay {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            width: 260px;
+            background: rgba(26, 29, 35, 0.9);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px;
+            backdrop-filter: blur(4px);
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            z-index: 10;
+            transition: opacity 0.3s;
+        }
+        .bar-row {
+            margin-bottom: 12px;
+        }
+        .bar-label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.85rem;
+            margin-bottom: 4px;
+            color: var(--text-dim);
+        }
+        .bar-track {
+            width: 100%;
+            height: 8px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .bar-fill {
+            height: 100%;
+            width: 0%;
+            transition: width 0.1s linear;
+        }
+
+        canvas#webgl-canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        /* Playback Controls */
+        #playback-controls {
+            background: var(--panel-bg);
+            border-top: 1px solid var(--border);
+            padding: 15px 20px;
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            z-index: 20;
+        }
+        
+        .control-group { display: flex; align-items: center; gap: 10px; }
+        
+        button.icon-btn {
+            background: var(--bg-dark);
+            border: 1px solid var(--border);
+            color: var(--text-main);
+            min-width: 40px;
+            height: 36px;
+            border-radius: 4px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+            padding: 0 10px;
+            font-size: 0.9rem;
+        }
+        button.icon-btn:hover { background: rgba(255,255,255,0.1); border-color: var(--accent); }
+        button.icon-btn.active { background: var(--accent); color: white; border-color: var(--accent); }
+
+        /* Right Column */
+        #right-col {
+            background: var(--panel-bg);
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+            box-shadow: -5px 0 15px rgba(0,0,0,0.2);
+            z-index: 20;
+        }
+
+        h3 {
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-dim);
+            margin-bottom: 12px;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 8px;
+        }
+
+        .slider-group { margin-bottom: 20px; }
+        .slider-label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.9rem;
+            margin-bottom: 8px;
+        }
+        .slider-val { color: var(--accent); font-family: monospace; font-weight: bold;}
+
+        input[type="range"] {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 6px;
+            background: var(--bg-dark);
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            outline: none;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 18px;
+            height: 18px;
+            background: var(--accent);
+            border-radius: 50%;
+            cursor: pointer;
+            transition: transform 0.1s;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+        input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.2); }
+
+        .checkbox-group {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .checkbox-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 0.95rem;
+            cursor: pointer;
+            padding: 4px 0;
+        }
+        .checkbox-item:hover { color: #fff; }
+        input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px; cursor: pointer;}
+        .color-tag {
+            width: 12px; 
+            height: 12px; 
+            border-radius: 2px;
+            display: inline-block;
+            border: 1px solid rgba(255,255,255,0.3);
+        }
+
+    </style>
+</head>
+<body>
+
+    <!-- Global Help Modal -->
+    <dialog id="modal-help">
+        <h2>重力修正仿真实验室</h2>
+        <p>本仿真包含两种模式，帮助建立空间认知和物理直觉。</p>
+        <ul style="line-height: 1.6; padding-left: 20px;">
+            <li><strong>🌍 认知模式 (默认)：</strong> 观察一个完整的不透明球体，建立宏观概念。</li>
+            <li><strong>📐 剖面分析模式：</strong> 点击左上角按钮切换。球体将切开一半，露出内部受力分析平面，且<strong>自动停止自转</strong>。</li>
+            <li><strong>矢量观察：</strong> 在分析模式下，拖动“纬度”滑块，观察红色引力矢量（恒指地心）与绿色向心力的关系。</li>
+        </ul>
+        <div style="text-align: right;">
+            <button onclick="document.getElementById('modal-help').close()">开始实验</button>
+        </div>
+    </dialog>
+
+    <div id="app-container">
+        <!-- LEFT COLUMN -->
+        <div id="left-col">
+            <!-- 1. Visualization -->
+            <div id="sim-canvas-container">
+                <div id="view-hint">🖱️ 拖拽旋转 / 滚轮缩放</div>
+                
+                <div id="mode-switch-container">
+                    <button id="btn-mode-switch" class="mode-btn" onclick="app.toggleMode()">
+                        📐 进入剖面分析模式
+                    </button>
+                </div>
+
+                <div id="cam-controls">
+                    <div class="cam-btn" onclick="app.alignToSection()">🎯 正对剖面</div>
+                    <div class="cam-btn" onclick="app.setCamera(0, 1.5)">俯视</div>
+                    <div class="cam-btn" onclick="app.setCamera(-1.57, 0)">左视</div>
+                </div>
+
+                <!-- Bar Charts Overlay -->
+                <div id="bar-charts-overlay">
+                    <div class="bar-row">
+                        <div class="bar-label">
+                            <span style="color:var(--col-grav)">万有引力 Fg (恒定)</span>
+                            <span id="val-fg">100N</span>
+                        </div>
+                        <div class="bar-track"><div id="bar-fg" class="bar-fill" style="background:var(--col-grav); width:80%"></div></div>
+                    </div>
+                    <div class="bar-row">
+                        <div class="bar-label">
+                            <span style="color:var(--col-fn)">向心力 Fn (随纬度变化)</span>
+                            <span id="val-fn">20N</span>
+                        </div>
+                        <div class="bar-track"><div id="bar-fn" class="bar-fill" style="background:var(--col-fn); width:20%"></div></div>
+                    </div>
+                    <div class="bar-row">
+                        <div class="bar-label">
+                            <span style="color:var(--col-g)">重力 G (合成结果)</span>
+                            <span id="val-g">90N</span>
+                        </div>
+                        <div class="bar-track"><div id="bar-g" class="bar-fill" style="background:var(--col-g); width:70%"></div></div>
+                    </div>
+                </div>
+
+                <canvas id="webgl-canvas"></canvas>
+            </div>
+
+            <!-- 2. Playback -->
+            <div id="playback-controls">
+                <div class="control-group">
+                    <button class="icon-btn" id="play-pause-btn" title="地球自转开关">🌍 自转: 开</button>
+                </div>
+                
+                <div class="control-group" style="border-left: 1px solid var(--border); padding-left: 20px;">
+                    <button class="icon-btn" id="auto-scan-btn" title="物体沿经线自动移动">🏃 沿经线演示: 关</button>
+                </div>
+
+                <div class="control-group" style="margin-left: auto;">
+                     <button class="icon-btn" onclick="app.resetCamera()" title="重置视角">📷 重置</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- RIGHT COLUMN -->
+        <div id="right-col">
+            
+            <!-- Parameters -->
+            <div id="panel-input-variables">
+                <h3>实验参数设置</h3>
+
+                <div class="slider-group">
+                    <div class="slider-label">
+                        <span>缩放 (Zoom)</span>
+                        <span id="display-zoom" class="slider-val">1.0x</span>
+                    </div>
+                    <input type="range" id="slider-zoom" min="0.5" max="3.0" step="0.1" value="1.0">
+                </div>
+                
+                <div class="slider-group">
+                    <div class="slider-label">
+                        <span>观察纬度 (θ)</span>
+                        <span id="display-lat" class="slider-val">45°</span>
+                    </div>
+                    <input type="range" id="slider-lat" min="-90" max="90" value="45">
+                    <div style="font-size: 0.75rem; color: var(--text-dim); margin-top: 5px;">
+                        提示: 在分析模式下拖动效果最佳
+                    </div>
+                </div>
+
+                <div class="slider-group">
+                    <div class="slider-label">
+                        <span>自转效应夸张倍率</span>
+                        <span id="display-speed" class="slider-val">3.5x</span>
+                    </div>
+                    <input type="range" id="slider-speed" min="0" max="5.0" step="0.1" value="3.5">
+                    <div style="font-size: 0.75rem; color: var(--text-dim); margin-top: 4px;">
+                        值越大，赤道处向心力占比越高
+                    </div>
+                </div>
+            </div>
+
+            <!-- Visual Aids -->
+            <div id="panel-visual-aids">
+                <h3>显示设置</h3>
+                <div class="checkbox-group">
+                    <label class="checkbox-item">
+                        <input type="checkbox" id="chk-fg" checked>
+                        <span class="color-tag" style="background:var(--col-grav)"></span> 显示 万有引力 (Fg)
+                    </label>
+                    <label class="checkbox-item">
+                        <input type="checkbox" id="chk-fn" checked>
+                        <span class="color-tag" style="background:var(--col-fn)"></span> 显示 向心力 (Fn)
+                    </label>
+                    <label class="checkbox-item">
+                        <input type="checkbox" id="chk-g" checked>
+                        <span class="color-tag" style="background:var(--col-g)"></span> 显示 重力 (G)
+                    </label>
+                    <hr style="border-color: var(--border); width: 100%; margin: 5px 0;">
+                    <label class="checkbox-item">
+                        <input type="checkbox" id="chk-traj" checked> 显示 自转轨道 (纬线)
+                    </label>
+                    <label class="checkbox-item">
+                        <input type="checkbox" id="chk-meridian" checked> 显示 移动轨迹 (经线)
+                    </label>
+                    <label class="checkbox-item">
+                        <input type="checkbox" id="chk-radius"> 显示 旋转半径 (r)
+                    </label>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+<script>
+/**
+ * 3D Vector Math
+ */
+class Vector3 {
+    constructor(x, y, z) { this.x = x; this.y = y; this.z = z; }
+    add(v) { return new Vector3(this.x + v.x, this.y + v.y, this.z + v.z); }
+    sub(v) { return new Vector3(this.x - v.x, this.y - v.y, this.z - v.z); }
+    scale(s) { return new Vector3(this.x * s, this.y * s, this.z * s); }
+    mag() { return Math.sqrt(this.x**2 + this.y**2 + this.z**2); }
+    normalize() { const m = this.mag(); return m === 0 ? new Vector3(0,0,0) : this.scale(1/m); }
+    
+    rotateX(angle) {
+        const c = Math.cos(angle);
+        const s = Math.sin(angle);
+        return new Vector3(this.x, this.y * c - this.z * s, this.y * s + this.z * c);
+    }
+    rotateY(angle) {
+        const c = Math.cos(angle);
+        const s = Math.sin(angle);
+        return new Vector3(this.x * c - this.z * s, this.y, this.x * s + this.z * c);
+    }
+}
+
+/**
+ * App Controller
+ */
+const app = {
+    canvas: null,
+    ctx: null,
+    width: 0,
+    height: 0,
+    
+    // States
+    isAnalysisMode: false,
+    isRotating: true,
+    isScanning: false, 
+    scanDirection: 1, 
+    
+    time: 0,
+    
+    // Camera
+    camAzimuth: -0.5, 
+    camElevation: 0.3, 
+    camZoom: 1.0,      
+    isDragging: false,
+    lastMouseX: 0,
+    lastMouseY: 0,
+
+    // Continents
+    continents: [],
+
+    // Parameters
+    params: {
+        lat: 45,       
+        speedMult: 3.5, // Default 3.5x
+        mass: 10,
+        R: 220,        
+        baseOmega: 0.005 
+    },
+    
+    // Toggles
+    showFg: true,
+    showFn: true,
+    showG: true,
+    showTraj: true,
+    showMeridian: true,
+    showRadius: false,
+
+    init() {
+        document.getElementById('modal-help').showModal();
+
+        this.canvas = document.getElementById('webgl-canvas');
+        this.ctx = this.canvas.getContext('2d');
+        this.resize();
+        window.addEventListener('resize', () => this.resize());
+
+        this.generateContinents(15); // Fewer, larger continents
+        this.bindControls();
+        this.bindMouse();
+        this.loop();
+    },
+
+    generateContinents(count) {
+        this.continents = [];
+        for(let i=0; i<count; i++) {
+            const lat = (Math.random() * 160 - 80) * Math.PI/180;
+            const lon = (Math.random() * 360) * Math.PI/180;
+            const radius = (20 + Math.random() * 30) * Math.PI/180;
+            
+            const points = [];
+            const numPoints = 8 + Math.floor(Math.random() * 5);
+            for(let j=0; j<numPoints; j++) {
+                const angle = (j / numPoints) * Math.PI * 2;
+                const rVar = radius * (0.7 + Math.random() * 0.6); 
+                const dLat = rVar * Math.sin(angle);
+                const dLon = rVar * Math.cos(angle);
+                points.push({lat: lat + dLat, lon: lon + dLon});
+            }
+            
+            this.continents.push({
+                centerLat: lat,
+                centerLon: lon,
+                points: points,
+                color: Math.random() > 0.5 ? '#3b82f6' : '#2563eb' 
+            });
+        }
+    },
+
+    resize() {
+        const rect = this.canvas.parentElement.getBoundingClientRect();
+        this.canvas.width = rect.width;
+        this.canvas.height = rect.height;
+        this.width = rect.width;
+        this.height = rect.height;
+    },
+
+    bindControls() {
+        // Zoom
+        document.getElementById('slider-zoom').addEventListener('input', (e) => {
+            this.camZoom = parseFloat(e.target.value);
+            document.getElementById('display-zoom').innerText = this.camZoom.toFixed(1) + "x";
+        });
+
+        // Lat
+        document.getElementById('slider-lat').addEventListener('input', (e) => {
+            this.params.lat = parseFloat(e.target.value);
+            document.getElementById('display-lat').innerText = this.params.lat + "°";
+            if(this.isScanning) this.toggleScan(false);
+        });
+
+        // Speed Mult
+        document.getElementById('slider-speed').addEventListener('input', (e) => {
+            this.params.speedMult = parseFloat(e.target.value);
+            document.getElementById('display-speed').innerText = this.params.speedMult + "x";
+        });
+
+        // Toggles
+        const bindChk = (id, prop) => {
+            document.getElementById(id).addEventListener('change', (e) => {
+                this[prop] = e.target.checked;
+            });
+        };
+        bindChk('chk-fg', 'showFg');
+        bindChk('chk-fn', 'showFn');
+        bindChk('chk-g', 'showG');
+        bindChk('chk-traj', 'showTraj');
+        bindChk('chk-meridian', 'showMeridian');
+        bindChk('chk-radius', 'showRadius');
+
+        // Play/Pause
+        const btnRot = document.getElementById('play-pause-btn');
+        btnRot.addEventListener('click', () => {
+            this.isRotating = !this.isRotating;
+            this.updatePlayBtn();
+        });
+
+        // Scan
+        document.getElementById('auto-scan-btn').addEventListener('click', () => {
+            this.toggleScan(!this.isScanning);
+        });
+    },
+
+    updatePlayBtn() {
+        const btn = document.getElementById('play-pause-btn');
+        btn.innerText = this.isRotating ? "🌍 自转: 开" : "🌍 自转: 关";
+        btn.classList.toggle('active', this.isRotating);
+    },
+
+    bindMouse() {
+        this.canvas.addEventListener('mousedown', (e) => {
+            this.isDragging = true;
+            this.lastMouseX = e.clientX;
+            this.lastMouseY = e.clientY;
+            this.canvas.style.cursor = 'grabbing';
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            if (!this.isDragging) return;
+            const deltaX = e.clientX - this.lastMouseX;
+            const deltaY = e.clientY - this.lastMouseY;
+            this.camAzimuth += deltaX * 0.01;
+            this.camElevation = Math.max(-1.5, Math.min(1.5, this.camElevation + deltaY * 0.01));
+            this.lastMouseX = e.clientX;
+            this.lastMouseY = e.clientY;
+        });
+
+        window.addEventListener('mouseup', () => {
+            this.isDragging = false;
+            this.canvas.style.cursor = 'grab';
+        });
+
+        this.canvas.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            const delta = -Math.sign(e.deltaY) * 0.1;
+            this.camZoom = Math.max(0.2, Math.min(5.0, this.camZoom + delta));
+            document.getElementById('slider-zoom').value = this.camZoom;
+            document.getElementById('display-zoom').innerText = this.camZoom.toFixed(1) + "x";
+        }, { passive: false });
+    },
+
+    toggleMode() {
+        this.isAnalysisMode = !this.isAnalysisMode;
+        const btn = document.getElementById('btn-mode-switch');
+        
+        if (this.isAnalysisMode) {
+            btn.innerHTML = "🌍 返回认知模式";
+            btn.classList.add('active');
+            this.isRotating = false;
+            this.updatePlayBtn();
+            this.alignToSection();
+        } else {
+            btn.innerHTML = "📐 进入剖面分析模式";
+            btn.classList.remove('active');
+            this.isRotating = true;
+            this.updatePlayBtn();
+            this.setCamera(-0.5, 0.3);
+        }
+    },
+
+    toggleScan(state) {
+        this.isScanning = state;
+        const btn = document.getElementById('auto-scan-btn');
+        btn.innerText = state ? "🏃 沿经线演示: 开" : "🏃 沿经线演示: 关";
+        btn.classList.toggle('active', state);
+    },
+
+    setCamera(az, el) {
+        this.camAzimuth = az;
+        this.camElevation = el;
+    },
+
+    resetCamera() {
+        this.camAzimuth = -0.5;
+        this.camElevation = 0.3;
+        this.camZoom = 1.0;
+        document.getElementById('slider-zoom').value = 1.0;
+        document.getElementById('display-zoom').innerText = "1.0x";
+    },
+
+    alignToSection() {
+        // Updated logic: Align camera perpendicular to meridian plane
+        // Meridian plane angle is 'this.time'
+        // We want Z-axis to align with Plane Normal (which is radial)
+        // Correct Azimuth to look "flat" onto the meridian circle is:
+        this.camAzimuth = this.time - Math.PI/2;
+        this.camElevation = 0;
+    },
+
+    // --- Physics ---
+
+    updatePhysics() {
+        if (this.isScanning) {
+            const scanSpeed = 0.5;
+            this.params.lat += scanSpeed * this.scanDirection;
+            if (this.params.lat >= 90) {
+                this.params.lat = 90;
+                this.scanDirection = -1;
+            } else if (this.params.lat <= -90) {
+                this.params.lat = -90;
+                this.scanDirection = 1;
+            }
+            document.getElementById('slider-lat').value = this.params.lat;
+            document.getElementById('display-lat').innerText = Math.round(this.params.lat) + "°";
+        }
+
+        if (this.isRotating) {
+            const omega = this.params.baseOmega * 1.5; 
+            this.time += omega;
+        }
+
+        const R = this.params.R;
+        const latRad = this.params.lat * Math.PI / 180;
+        
+        const r = R * Math.cos(latRad);
+        const y = R * Math.sin(latRad);
+        
+        const pPos = new Vector3(
+            r * Math.sin(this.time),
+            y,
+            r * Math.cos(this.time)
+        );
+
+        // --- Fg Logic: Length = Radius ---
+        const vFg = pPos.scale(-1); 
+
+        // --- Fn Logic: Exaggerated ---
+        const exaggerationFactor = this.params.speedMult * 0.18; 
+        const fnMag = R * exaggerationFactor * (r/R); 
+        
+        const axisPoint = new Vector3(0, y, 0);
+        const vFn = axisPoint.sub(pPos).normalize().scale(fnMag);
+
+        const vG = vFg.sub(vFn);
+
+        return { pPos, vFg, vFn, vG, r, y, latRad };
+    },
+
+    updateBars(phys) {
+        const magFg = phys.vFg.mag();
+        const magFn = phys.vFn.mag();
+        const magG = phys.vG.mag();
+        const maxVal = magFg * 1.1;
+
+        const setBar = (id, valId, val) => {
+            const pct = Math.min(100, (val / maxVal) * 100);
+            document.getElementById(id).style.width = pct + '%';
+            document.getElementById(valId).innerText = Math.round(val * 1) + " "; 
+        };
+
+        setBar('bar-fg', 'val-fg', magFg);
+        setBar('bar-fn', 'val-fn', magFn);
+        setBar('bar-g', 'val-g', magG);
+    },
+
+    // --- Rendering ---
+
+    project(v) {
+        let rv = v.rotateY(this.camAzimuth);
+        rv = rv.rotateX(this.camElevation);
+        const fl = 800; 
+        const zOffset = 600; 
+        const scale = (fl / (fl + rv.z + zOffset)) * this.camZoom;
+        return {
+            x: this.width / 2 + rv.x * scale,
+            y: this.height / 2 - rv.y * scale, 
+            scale: scale,
+            z: rv.z 
+        };
+    },
+
+    drawArrow(start3D, vec3D, color, label) {
+        const vecLen = vec3D.mag();
+        if (vecLen < 0.1) return;
+
+        // Visual Head Size
+        const HEAD_LEN_WORLD = 25; 
+        const actualHeadLen = Math.min(HEAD_LEN_WORLD, vecLen);
+        const shaftLen = Math.max(0, vecLen - actualHeadLen);
+
+        const dir = vec3D.normalize();
+        const shaftEnd3D = start3D.add(dir.scale(shaftLen));
+        const end3D = start3D.add(vec3D);
+
+        const pStart = this.project(start3D);
+        const pShaftEnd = this.project(shaftEnd3D);
+        const pTip = this.project(end3D);
+        const scale = pTip.scale;
+        
+        const shaftWidth = 6 * scale; 
+
+        // Shaft
+        if (shaftLen > 0.5) {
+            this.ctx.beginPath();
+            this.ctx.moveTo(pStart.x, pStart.y);
+            this.ctx.lineTo(pShaftEnd.x, pShaftEnd.y);
+            this.ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+            this.ctx.lineWidth = shaftWidth + 2;
+            this.ctx.lineCap = 'butt';
+            this.ctx.stroke();
+
+            this.ctx.beginPath();
+            this.ctx.moveTo(pStart.x, pStart.y);
+            this.ctx.lineTo(pShaftEnd.x, pShaftEnd.y);
+            this.ctx.strokeStyle = color;
+            this.ctx.lineWidth = shaftWidth;
+            this.ctx.stroke();
+
+            this.ctx.beginPath();
+            this.ctx.moveTo(pStart.x, pStart.y);
+            this.ctx.lineTo(pShaftEnd.x, pShaftEnd.y);
+            this.ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+            this.ctx.lineWidth = shaftWidth * 0.3;
+            this.ctx.stroke();
+        }
+
+        // Head
+        const angle = Math.atan2(pTip.y - pShaftEnd.y, pTip.x - pShaftEnd.x);
+        const headPixelLen = 30 * scale; 
+        const headWidth = shaftWidth * 3.5;
+
+        const tipX = pTip.x;
+        const tipY = pTip.y;
+        
+        const backX = tipX - headPixelLen * Math.cos(angle);
+        const backY = tipY - headPixelLen * Math.sin(angle);
+        
+        const leftX = backX + headWidth/2 * Math.cos(angle - Math.PI/2);
+        const leftY = backY + headWidth/2 * Math.sin(angle - Math.PI/2);
+        const rightX = backX + headWidth/2 * Math.cos(angle + Math.PI/2);
+        const rightY = backY + headWidth/2 * Math.sin(angle + Math.PI/2);
+
+        this.ctx.beginPath();
+        this.ctx.moveTo(tipX, tipY);
+        this.ctx.lineTo(leftX, leftY);
+        this.ctx.lineTo(rightX, rightY);
+        this.ctx.closePath();
+        this.ctx.fillStyle = color;
+        this.ctx.fill();
+        this.ctx.lineWidth = 1;
+        this.ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+        this.ctx.stroke();
+
+        this.ctx.beginPath();
+        this.ctx.moveTo(tipX, tipY);
+        this.ctx.lineTo(leftX * 0.7 + rightX * 0.3, leftY * 0.7 + rightY * 0.3);
+        this.ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+        this.ctx.lineWidth = 2;
+        this.ctx.stroke();
+
+        if (label) {
+            this.ctx.font = `bold ${Math.max(12, 16 * scale)}px "Segoe UI", sans-serif`;
+            this.ctx.textAlign = 'center';
+            this.ctx.textBaseline = 'middle';
+            const labelDist = 15 * scale;
+            const lx = tipX + labelDist * Math.cos(angle);
+            const ly = tipY + labelDist * Math.sin(angle);
+            this.ctx.lineWidth = 3;
+            this.ctx.strokeStyle = 'rgba(0,0,0,0.8)';
+            this.ctx.strokeText(label, lx, ly);
+            this.ctx.fillStyle = 'white';
+            this.ctx.fillText(label, lx, ly);
+        }
+    },
+
+    drawEarth(phys) {
+        const R = this.params.R;
+        const curLon = this.time; 
+        
+        // Correct Radius calculation for stability (scale at center)
+        const center = this.project(new Vector3(0,0,0));
+        const centerProjScale = center.scale; // This is scale at (0,0,0)
+        // Visual radius is WorldRadius * CenterScale
+        const projR = R * centerProjScale; 
+        
+        // --- 1. Draw Base Sphere (Ocean) ---
+        // A nice gradient blue
+        const grad = this.ctx.createRadialGradient(center.x, center.y, projR * 0.3, center.x, center.y, projR);
+        grad.addColorStop(0, '#1e3a8a'); // Blue-900
+        grad.addColorStop(1, '#0f172a'); // Slate-900
+        
+        this.ctx.fillStyle = grad;
+        this.ctx.beginPath();
+        this.ctx.arc(center.x, center.y, projR, 0, Math.PI*2);
+        this.ctx.fill();
+
+        // --- 2. Draw Continents (Patches) ---
+        
+        const isInsideWedge = (lon) => {
+            if (!this.isAnalysisMode) return false; 
+            let diff = lon - curLon;
+            while(diff < 0) diff += Math.PI*2;
+            while(diff >= Math.PI*2) diff -= Math.PI*2;
+            return diff >= 0 && diff <= Math.PI/2;
+        };
+
+        // Draw polygons
+        // Sort by Average Z of polygon to handle occlusion roughly
+        const renderableContinents = [];
+        
+        this.continents.forEach(c => {
+            // Transform points to 3D
+            const polyPoints3D = c.points.map(pt => {
+                const wLon = pt.lon + this.time;
+                return new Vector3(
+                    R * Math.cos(pt.lat) * Math.sin(wLon),
+                    R * Math.sin(pt.lat),
+                    R * Math.cos(pt.lat) * Math.cos(wLon)
+                );
+            });
+            
+            // Check if any point is in wedge (simplified check: use center)
+            const wCenterLon = c.centerLon + this.time;
+            if (isInsideWedge(wCenterLon)) return; 
+
+            // Average Z for sorting
+            const projs = polyPoints3D.map(v => this.project(v));
+            const avgZ = projs.reduce((s, p) => s + p.z, 0) / projs.length;
+            
+            renderableContinents.push({
+                projs: projs,
+                z: avgZ,
+                color: '#15803d' // Green-700
+            });
+        });
+
+        renderableContinents.sort((a,b) => b.z - a.z); // Draw back to front
+
+        renderableContinents.forEach(rc => {
+            if (rc.z > 0) {
+                return; // Skip back faces
+            }
+            
+            this.ctx.fillStyle = rc.color;
+            this.ctx.strokeStyle = '#14532d'; // Dark border
+            this.ctx.lineWidth = 1;
+            this.ctx.beginPath();
+            if(rc.projs.length > 0) {
+                this.ctx.moveTo(rc.projs[0].x, rc.projs[0].y);
+                for(let i=1; i<rc.projs.length; i++) this.ctx.lineTo(rc.projs[i].x, rc.projs[i].y);
+                this.ctx.closePath();
+                this.ctx.fill();
+                // this.ctx.stroke(); 
+            }
+        });
+
+        // --- 3. Draw Cut Faces (Analysis Mode Only) ---
+        if (this.isAnalysisMode) {
+            const drawSemiCircle = (angleOffset, color) => {
+                const steps = 30;
+                const theta = curLon + angleOffset;
+                
+                this.ctx.fillStyle = color;
+                this.ctx.beginPath();
+                const pc = this.project(new Vector3(0,0,0));
+                this.ctx.moveTo(pc.x, pc.y);
+                
+                for(let i=0; i<=steps; i++) {
+                    const t = -Math.PI/2 + (Math.PI * i / steps);
+                    const x = R * Math.cos(t) * Math.sin(theta);
+                    const y = R * Math.sin(t);
+                    const z = R * Math.cos(t) * Math.cos(theta);
+                    const p = this.project(new Vector3(x, y, z));
+                    this.ctx.lineTo(p.x, p.y);
+                }
+                this.ctx.closePath();
+                this.ctx.fill();
+                this.ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+                this.ctx.lineWidth = 1;
+                this.ctx.stroke();
+            };
+
+            // Face 2 (Far)
+            drawSemiCircle(Math.PI/2, '#334155'); 
+            // Face 1 (Near/Particle plane) - Darker for contrast
+            drawSemiCircle(0, '#0f172a'); 
+        }
+
+        // --- 4. Trajectory ---
+        if (this.showTraj) {
+            this.ctx.beginPath();
+            this.ctx.setLineDash([5, 5]);
+            for(let t = 0; t <= Math.PI * 2.1; t += 0.1) {
+                const v3 = new Vector3(phys.r * Math.sin(t), phys.y, phys.r * Math.cos(t));
+                const p = this.project(v3);
+                if(t===0) this.ctx.moveTo(p.x, p.y);
+                else this.ctx.lineTo(p.x, p.y);
+            }
+            this.ctx.strokeStyle = '#fbbf24'; 
+            this.ctx.lineWidth = 2;
+            this.ctx.stroke();
+            this.ctx.setLineDash([]);
+        }
+        
+        // --- 5. Axis ---
+        const top = this.project(new Vector3(0, R*1.4, 0));
+        const bot = this.project(new Vector3(0, -R*1.4, 0));
+        this.ctx.beginPath();
+        this.ctx.moveTo(top.x, top.y);
+        this.ctx.lineTo(bot.x, bot.y);
+        this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+        this.ctx.lineWidth = 2;
+        this.ctx.setLineDash([10, 5]);
+        this.ctx.stroke();
+        this.ctx.setLineDash([]);
+    },
+
+    renderFrame() {
+        const phys = this.updatePhysics();
+        this.updateBars(phys);
+
+        this.ctx.clearRect(0, 0, this.width, this.height);
+
+        this.drawEarth(phys);
+
+        const p2d = this.project(phys.pPos);
+        this.ctx.fillStyle = '#fbbf24';
+        this.ctx.strokeStyle = '#fff';
+        this.ctx.lineWidth = 2;
+        this.ctx.beginPath();
+        this.ctx.arc(p2d.x, p2d.y, 8*p2d.scale, 0, Math.PI*2);
+        this.ctx.fill();
+        this.ctx.stroke();
+
+        // Vectors visible mostly in Analysis Mode (or if user forced checkboxes)
+        // But let's show them always if checkboxes are checked, user can toggle off
+        if (this.showFg) this.drawArrow(phys.pPos, phys.vFg, '#ef4444', 'Fg');
+        if (this.showFn) this.drawArrow(phys.pPos, phys.vFn, '#10b981', 'Fn');
+        if (this.showG) this.drawArrow(phys.pPos, phys.vG, '#3b82f6', 'G');
+    },
+
+    loop() {
+        requestAnimationFrame(() => this.loop());
+        this.renderFrame();
+    }
+};
+
+window.onload = () => app.init();
+</script>
+</body>
+</html>

@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>高中物理竞赛仿真：斜面滑块动力学</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg-color: #121212;
+            --panel-bg: #1e1e1e;
+            --text-color: #e0e0e0;
+            --accent-color: #00bcd4;
+            --border-color: #333;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            height: 100vh;
+            display: grid;
+            grid-template-columns: 1fr 320px;
+            grid-template-rows: 60% 40%;
+            grid-template-areas: 
+                "canvas controls"
+                "charts controls";
+            overflow: hidden;
+        }
+
+        /* Canvas Area */
+        #canvas-container {
+            grid-area: canvas;
+            position: relative;
+            background: #181818;
+            border-bottom: 1px solid var(--border-color);
+            overflow: hidden;
+        }
+
+        canvas#simCanvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        /* Charts Area */
+        #charts-container {
+            grid-area: charts;
+            background: #151515;
+            padding: 10px;
+            display: flex;
+            gap: 10px;
+            border-right: 1px solid var(--border-color);
+        }
+
+        .chart-wrapper {
+            flex: 1;
+            position: relative;
+            height: 100%;
+            min-width: 0; /* Fix flexbox overflow */
+        }
+
+        /* Controls Area */
+        #controls-container {
+            grid-area: controls;
+            background: var(--panel-bg);
+            padding: 20px;
+            border-left: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            overflow-y: auto;
+            box-shadow: -2px 0 5px rgba(0,0,0,0.3);
+        }
+
+        h2 { margin: 0 0 10px 0; font-size: 1.2rem; color: var(--accent-color); border-bottom: 2px solid var(--accent-color); padding-bottom: 5px; }
+        h3 { margin: 10px 0 5px 0; font-size: 0.9rem; color: #aaa; text-transform: uppercase; letter-spacing: 1px; }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            background: rgba(255,255,255,0.05);
+            padding: 10px;
+            border-radius: 6px;
+        }
+
+        label { font-size: 0.85rem; display: flex; justify-content: space-between; align-items: center; }
+        input[type="range"] { width: 100%; margin-top: 5px; cursor: pointer; accent-color: var(--accent-color); }
+        input[type="number"] { background: #333; border: 1px solid #555; color: white; width: 60px; padding: 2px 5px; border-radius: 3px; }
+        
+        .checkbox-group {
+            flex-direction: row;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .checkbox-item { display: flex; align-items: center; gap: 5px; font-size: 0.8rem; cursor: pointer; }
+        
+        .btn-group { display: flex; gap: 10px; margin-top: 10px; }
+        button {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background 0.2s;
+        }
+        .btn-primary { background: var(--accent-color); color: #000; }
+        .btn-primary:hover { background: #00acc1; }
+        .btn-secondary { background: #444; color: white; }
+        .btn-secondary:hover { background: #555; }
+
+        /* Scrubber */
+        .scrubber-container {
+            margin-top: auto;
+            background: #252525;
+            padding: 10px;
+            border-radius: 6px;
+            border: 1px solid #444;
+        }
+        #timeScrubber { width: 100%; margin: 5px 0; }
+        .scrubber-info { display: flex; justify-content: space-between; font-size: 0.75rem; color: #888; }
+
+        /* Overlay Info */
+        #status-overlay {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.7);
+            padding: 10px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 0.9rem;
+            pointer-events: none;
+            border-left: 3px solid var(--accent-color);
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            body {
+                grid-template-columns: 1fr;
+                grid-template-rows: 40% 30% 30%;
+                grid-template-areas: 
+                    "canvas"
+                    "charts"
+                    "controls";
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 左上：仿真画布 -->
+    <div id="canvas-container">
+        <canvas id="simCanvas"></canvas>
+        <div id="status-overlay">
+            <div>状态: <span id="state-status">静止</span></div>
+            <div>时间: <span id="state-time">0.00</span> s</div>
+            <div>位移: <span id="state-pos">0.00</span> m</div>
+            <div>速度: <span id="state-vel">0.00</span> m/s</div>
+            <div>加速度: <span id="state-acc">0.00</span> m/s²</div>
+            <div style="margin-top:5px; font-size:0.8em; color:#aaa;">摩擦力: <span id="state-friction">0.00</span> N</div>
+        </div>
+    </div>
+
+    <!-- 左下：图表 -->
+    <div id="charts-container">
+        <div class="chart-wrapper">
+            <canvas id="vtChart"></canvas>
+        </div>
+        <div class="chart-wrapper">
+            <canvas id="xtChart"></canvas>
+        </div>
+    </div>
+
+    <!-- 右侧：控制面板 -->
+    <div id="controls-container">
+        <h2>物理参数设置</h2>
+        
+        <div class="control-group">
+            <h3>环境参数</h3>
+            <label>
+                斜面倾角 θ (deg)
+                <input type="number" id="val-theta" value="30" readonly>
+            </label>
+            <input type="range" id="input-theta" min="0" max="90" step="1" value="30">
+
+            <label>
+                动摩擦系数 μ
+                <input type="number" id="val-mu" value="0.3" step="0.05" readonly>
+            </label>
+            <input type="range" id="input-mu" min="0" max="1.0" step="0.01" value="0.3">
+            
+            <label>
+                滑块质量 m (kg)
+                <input type="number" id="val-mass" value="2.0" step="0.1" readonly>
+            </label>
+            <input type="range" id="input-mass" min="0.1" max="10" step="0.1" value="2.0">
+            
+             <label>
+                重力加速度 g (m/s²)
+                <input type="number" id="input-g" value="9.8" step="0.1">
+            </label>
+        </div>
+
+        <div class="control-group">
+            <h3>受力分析开关</h3>
+            <div class="checkbox-group">
+                <label class="checkbox-item"><input type="checkbox" id="show-gravity" checked> <span style="color:#4caf50">●</span> 重力 (mg)</label>
+                <label class="checkbox-item"><input type="checkbox" id="show-normal" checked> <span style="color:#2196f3">●</span> 支持力 (N)</label>
+                <label class="checkbox-item"><input type="checkbox" id="show-friction" checked> <span style="color:#f44336">●</span> 摩擦力 (f)</label>
+                <label class="checkbox-item"><input type="checkbox" id="show-velocity"> <span style="color:#9c27b0">●</span> 速度 (v)</label>
+                <label class="checkbox-item"><input type="checkbox" id="show-net"> <span style="color:#ff9800">●</span> 合力 (ΣF)</label>
+            </div>
+        </div>
+
+        <div class="btn-group">
+            <button class="btn-primary" id="btn-play">开始仿真</button>
+            <button class="btn-secondary" id="btn-reset">重置系统</button>
+        </div>
+
+        <div class="scrubber-container">
+            <h3>历史回溯 (Time Travel)</h3>
+            <input type="range" id="timeScrubber" min="0" value="0" step="1" disabled>
+            <div class="scrubber-info">
+                <span>0s</span>
+                <span id="scrubber-current">Live</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * 物理引擎核心 - 30年竞赛教练版
+         * 特性：欧拉积分、状态历史栈、静/动摩擦自动切换
+         */
+        
+        // --- 1. 全局配置与状态 ---
+        const CONFIG = {
+            dt: 0.016, // 16ms time step
+            scale: 100, // 1m = 100px
+            originX: 100, // Canvas coords
+            originY: 400,
+            rampLength: 6 // meters
+        };
+
+        let params = {
+            theta: 30, // degrees
+            mu: 0.3,
+            mass: 2.0,
+            g: 9.8
+        };
+
+        // 仿真状态
+        let state = {
+            t: 0,
+            x: 0, // distance down the ramp
+            v: 0,
+            a: 0,
+            f_val: 0, // current friction magnitude
+            N_val: 0, // current normal force
+            status: "静止" // "静止", "加速下滑", "减速下滑"
+        };
+
+        let isRunning = false;
+        let isPaused = false; // distinct from stopped
+        let animationId = null;
+        
+        // 历史堆栈 for Scrubber
+        let historyStack = []; // Array of state objects
+
+        // --- 2. 物理计算核心 (Physics Kernel) ---
+        function resetSimulation() {
+            state = { t: 0, x: 0, v: 0, a: 0, f_val: 0, N_val: 0, status: "静止" };
+            historyStack = [JSON.parse(JSON.stringify(state))];
+            updateScrubberUI();
+            updateChart();
+            draw();
+        }
+
+        function updatePhysics() {
+            // 角度转弧度
+            const rad = params.theta * Math.PI / 180;
+            const sin = Math.sin(rad);
+            const cos = Math.cos(rad);
+
+            // 1. 受力分析
+            const F_gravity_x = params.mass * params.g * sin; // 沿斜面向下
+            // const F_gravity_y = params.mass * params.g * cos; // 垂直斜面压入
+            
+            // 支持力
+            state.N_val = params.mass * params.g * cos;
+
+            // 摩擦力逻辑 (关键点：区分静/动摩擦)
+            const max_static_friction = params.mu * state.N_val; // 简化模型：mu_s = mu_k
+            const kinetic_friction = params.mu * state.N_val;
+
+            let netForceX = 0;
+            let currentFriction = 0;
+
+            if (Math.abs(state.v) < 0.001) {
+                // --- 静止状态逻辑 ---
+                if (F_gravity_x <= max_static_friction) {
+                    // 动力不足以克服最大静摩擦
+                    state.a = 0;
+                    state.v = 0;
+                    currentFriction = -F_gravity_x; // 摩擦力与重力分量平衡
+                    state.status = "静止 (静摩擦)";
+                } else {
+                    // 突破静摩擦，开始运动
+                    currentFriction = -kinetic_friction * Math.sign(F_gravity_x);
+                    netForceX = F_gravity_x + currentFriction;
+                    state.a = netForceX / params.mass;
+                    state.status = "起动";
+                }
+            } else {
+                // --- 运动状态逻辑 ---
+                // 动摩擦力方向始终与速度方向相反
+                currentFriction = -kinetic_friction * Math.sign(state.v);
+                netForceX = F_gravity_x + currentFriction;
+                state.a = netForceX / params.mass;
+                state.status = state.a > 0 ? "加速下滑" : "减速";
+            }
+
+            state.f_val = currentFriction;
+
+            // 2. 欧拉积分 (Euler Integration)
+            state.v += state.a * CONFIG.dt;
+            state.x += state.v * CONFIG.dt;
+            state.t += CONFIG.dt;
+
+            // 3. 边界处理 (到达底端)
+            if (state.x >= CONFIG.rampLength) {
+                state.x = CONFIG.rampLength;
+                state.v = 0;
+                state.a = 0;
+                isRunning = false;
+                state.status = "到达底端";
+                togglePlayBtn(false);
+            }
+
+            // 4. 记录历史
+            historyStack.push(JSON.parse(JSON.stringify(state)));
+            
+            // 5. 限制堆栈大小 (Optional, prevents memory leak in long runs)
+            if (historyStack.length > 5000) historyStack.shift();
+        }
+
+        // --- 3. 渲染引擎 (Visualizer) ---
+        const canvas = document.getElementById('simCanvas');
+        const ctx = canvas.getContext('2d');
+
+        function resizeCanvas() {
+            canvas.width = canvas.parentElement.clientWidth;
+            canvas.height = canvas.parentElement.clientHeight;
+            draw();
+        }
+        window.addEventListener('resize', resizeCanvas);
+
+        function drawArrow(x, y, vectorX, vectorY, color, label, scale = 1.0) {
+            if (Math.abs(vectorX) < 0.01 && Math.abs(vectorY) < 0.01) return;
+
+            const endX = x + vectorX * scale;
+            const endY = y + vectorY * scale;
+            const headLen = 10;
+            const angle = Math.atan2(endY - y, endX - x);
+
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            ctx.lineTo(endX, endY);
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // Arrow head
+            ctx.beginPath();
+            ctx.moveTo(endX, endY);
+            ctx.lineTo(endX - headLen * Math.cos(angle - Math.PI / 6), endY - headLen * Math.sin(angle - Math.PI / 6));
+            ctx.lineTo(endX - headLen * Math.cos(angle + Math.PI / 6), endY - headLen * Math.sin(angle + Math.PI / 6));
+            ctx.fillStyle = color;
+            ctx.fill();
+
+            // Label
+            if (label) {
+                ctx.fillStyle = color;
+                ctx.font = "12px Arial";
+                ctx.fillText(label, endX + 10, endY);
+            }
+        }
+
+        function draw() {
+            // 清空画布
+            ctx.fillStyle = "#181818";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // 坐标变换：将原点移至斜面底部起始点
+            ctx.save();
+            ctx.translate(50, canvas.height - 50); // Bottom-left margin
+            
+            // 绘制地面
+            ctx.strokeStyle = "#555";
+            ctx.beginPath();
+            ctx.moveTo(-50, 0);
+            ctx.lineTo(canvas.width, 0);
+            ctx.stroke();
+
+            // 绘制斜面 (Triangle)
+            const rampPixelLen = CONFIG.rampLength * CONFIG.scale;
+            const rad = params.theta * Math.PI / 180;
+            const rampHeight = rampPixelLen * Math.sin(rad);
+            const rampBase = rampPixelLen * Math.cos(rad);
+
+            ctx.fillStyle = "#2c2c2c";
+            ctx.strokeStyle = "#888";
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.lineTo(rampBase, 0);
+            ctx.lineTo(0, -rampHeight);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            // 标记角度
+            ctx.beginPath();
+            ctx.arc(rampBase, 0, 30, Math.PI, Math.PI + rad); // Approximation for visual
+            ctx.strokeStyle = "#aaa";
+            ctx.stroke();
+            ctx.fillStyle = "#aaa";
+            ctx.fillText(params.theta + "°", rampBase - 40, -10);
+
+            // --- 坐标系旋转 --- 
+            // 为了方便画滑块，我们建立局部坐标系：原点在斜面顶端，X轴沿斜面向下
+            ctx.translate(0, -rampHeight); // Move to top tip
+            ctx.rotate(rad); // Rotate to align X with ramp
+            
+            // 绘制斜面表面线
+            ctx.strokeStyle = "#fff";
+            ctx.setLineDash([5, 5]);
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.lineTo(rampPixelLen, 0);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // 绘制滑块
+            const blockW = 40;
+            const blockH = 20;
+            // state.x is meters. posPx is pixels.
+            const posPx = state.x * CONFIG.scale; 
+            
+            ctx.fillStyle = params.mu > 0 ? "#8d6e63" : "#4fc3f7"; // Brown for rough, Blue for smooth
+            ctx.fillRect(posPx - blockW/2, -blockH, blockW, blockH); // Draw above line
+
+            // 滑块中心点 (用于力的起点)
+            const cx = posPx;
+            const cy = -blockH / 2;
+
+            // --- 绘制力与矢量 (Visuals) ---
+            const forceScale = 2; // px per Newton
+            
+            // 1. 重力 mg (竖直向下)
+            if (document.getElementById('show-gravity').checked) {
+                // 重力在局部坐标系中的分量：x = mg sin, y = mg cos
+                // 实际上我们只需旋转画布回全局，或者计算分量。计算分量更直观。
+                const Fg = params.mass * params.g;
+                // 在局部坐标系中，重力方向是垂直向下旋转 -theta
+                // Fg_x = mg * sin(theta)
+                // Fg_y = mg * cos(theta) (pointing down, so positive in canvas coords)
+                const fgx = Fg * Math.sin(rad);
+                const fgy = Fg * Math.cos(rad);
+                drawArrow(cx, cy, fgx * forceScale, fgy * forceScale, "#4caf50", "mg");
+            }
+
+            // 2. 支持力 N (垂直斜面向上, y negative in local)
+            if (document.getElementById('show-normal').checked) {
+                drawArrow(cx, cy, 0, -state.N_val * forceScale, "#2196f3", "N");
+            }
+
+            // 3. 摩擦力 f (沿斜面)
+            if (document.getElementById('show-friction').checked) {
+                // state.f_val is signed. Positive is down slope (unlikely for friction usually), Negative is up.
+                // Draw opposite to motion or tendency
+                drawArrow(cx, cy, state.f_val * forceScale, 0, "#f44336", "f");
+            }
+
+            // 4. 速度 v
+            if (document.getElementById('show-velocity').checked) {
+                drawArrow(cx, cy, state.v * 20, 0, "#9c27b0", "v"); // Scale velocity for visibility
+            }
+
+            // 5. 合力 Net
+            if (document.getElementById('show-net').checked) {
+                const netX = params.mass * state.a;
+                drawArrow(cx, cy + 5, netX * forceScale, 0, "#ff9800", "F_net"); // Offset slightly
+            }
+
+            ctx.restore(); // Restore to global coords
+            
+            // UI 更新
+            document.getElementById('state-status').textContent = state.status;
+            document.getElementById('state-time').textContent = state.t.toFixed(2);
+            document.getElementById('state-pos').textContent = state.x.toFixed(2);
+            document.getElementById('state-vel').textContent = state.v.toFixed(2);
+            document.getElementById('state-acc').textContent = state.a.toFixed(2);
+            document.getElementById('state-friction').textContent = Math.abs(state.f_val).toFixed(2);
+        }
+
+        // --- 4. 图表系统 (Chart.js) ---
+        let vtChart, xtChart;
+        
+        function initCharts() {
+            const commonOptions = {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { type: 'linear', position: 'bottom', title: {display: true, text: 't (s)'} },
+                    y: { title: {display: true, text: 'Value'} }
+                },
+                elements: { point: { radius: 0 } }
+            };
+
+            const ctxV = document.getElementById('vtChart').getContext('2d');
+            vtChart = new Chart(ctxV, {
+                type: 'line',
+                data: { datasets: [{ label: 'v (m/s)', borderColor: '#9c27b0', borderWidth: 2, data: [] }] },
+                options: { ...commonOptions, plugins: { title: { display: true, text: '速度-时间 (v-t)' } } }
+            });
+
+            const ctxX = document.getElementById('xtChart').getContext('2d');
+            xtChart = new Chart(ctxX, {
+                type: 'line',
+                data: { datasets: [{ label: 'x (m)', borderColor: '#00bcd4', borderWidth: 2, data: [] }] },
+                options: { ...commonOptions, plugins: { title: { display: true, text: '位移-时间 (x-t)' } } }
+            });
+        }
+
+        function updateChart() {
+            // 为性能考虑，仅重绘部分或全部
+            // 这里简单地全量重置数据，因为数据量不大
+            const vData = historyStack.map(s => ({x: s.t, y: s.v}));
+            const xData = historyStack.map(s => ({x: s.t, y: s.x}));
+            
+            vtChart.data.datasets[0].data = vData;
+            xtChart.data.datasets[0].data = xData;
+            
+            vtChart.update('none'); // 'none' mode for performance
+            xtChart.update('none');
+        }
+
+        // --- 5. 交互控制 (Input Handling) ---
+        
+        // 绑定滑块与数字框
+        function bindInput(sliderId, numberId, paramKey) {
+            const slider = document.getElementById(sliderId);
+            const number = document.getElementById(numberId);
+            
+            const update = (val) => {
+                val = parseFloat(val);
+                params[paramKey] = val;
+                slider.value = val;
+                number.value = val;
+                if (!isRunning) {
+                     resetSimulation(); // 实时预览静态变化
+                }
+            };
+
+            slider.addEventListener('input', e => update(e.target.value));
+            number.addEventListener('change', e => update(e.target.value));
+        }
+
+        bindInput('input-theta', 'val-theta', 'theta');
+        bindInput('input-mu', 'val-mu', 'mu');
+        bindInput('input-mass', 'val-mass', 'mass');
+        
+        document.getElementById('input-g').addEventListener('change', e => params.g = parseFloat(e.target.value));
+
+        // 按钮控制
+        const btnPlay = document.getElementById('btn-play');
+        const btnReset = document.getElementById('btn-reset');
+        
+        function togglePlayBtn(playing) {
+            btnPlay.textContent = playing ? "暂停" : "开始仿真";
+            btnPlay.classList.toggle('btn-secondary', playing);
+            btnPlay.classList.toggle('btn-primary', !playing);
+        }
+
+        btnPlay.addEventListener('click', () => {
+            if (isRunning) {
+                // Pause
+                isRunning = false;
+                isPaused = true;
+                togglePlayBtn(false);
+                // Enable scrubber
+                document.getElementById('timeScrubber').disabled = false;
+            } else {
+                // Start / Resume
+                isRunning = true;
+                isPaused = false;
+                togglePlayBtn(true);
+                document.getElementById('timeScrubber').disabled = true; // Disable scrubber during play
+                loop();
+            }
+        });
+
+        btnReset.addEventListener('click', () => {
+            isRunning = false;
+            isPaused = false;
+            togglePlayBtn(false);
+            resetSimulation();
+            document.getElementById('timeScrubber').disabled = true;
+        });
+
+        // Scrubber 逻辑
+        const scrubber = document.getElementById('timeScrubber');
+        const scrubberDisplay = document.getElementById('scrubber-current');
+
+        function updateScrubberUI() {
+            scrubber.max = historyStack.length - 1;
+            scrubber.value = historyStack.length - 1;
+        }
+
+        scrubber.addEventListener('input', (e) => {
+            const idx = parseInt(e.target.value);
+            if (historyStack[idx]) {
+                state = historyStack[idx];
+                scrubberDisplay.textContent = `T - ${(historyStack.length - 1 - idx) * CONFIG.dt}s`;
+                draw();
+            }
+        });
+
+        // 动画循环
+        function loop() {
+            if (!isRunning) return;
+            
+            updatePhysics();
+            draw();
+            
+            // 更新图表 (每10帧更新一次以节省性能)
+            if (historyStack.length % 5 === 0) updateChart();
+            updateScrubberUI();
+
+            animationId = requestAnimationFrame(loop);
+        }
+
+        // 初始化
+        window.onload = () => {
+            resizeCanvas();
+            initCharts();
+            resetSimulation();
+        };
+
+    </script>
+</body>
+</html>

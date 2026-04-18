@@ -1,0 +1,887 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>竖直圆周运动仿真</title>
+    <!-- 引入 Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --primary-color: #3b82f6;
+            --bg-color: #f3f4f6;
+            --panel-bg: #ffffff;
+            --text-color: #1f2937;
+            --border-color: #e5e7eb;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* 顶部导航栏 */
+        nav {
+            background: var(--panel-bg);
+            border-bottom: 1px solid var(--border-color);
+            padding: 0.5rem 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            height: 50px;
+        }
+
+        h1 { font-size: 1.2rem; font-weight: 600; }
+
+        .btn-icon {
+            background: none;
+            border: 1px solid var(--border-color);
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            cursor: pointer;
+            font-weight: bold;
+            color: var(--primary-color);
+        }
+
+        /* 主布局 Grid */
+        main {
+            flex: 1;
+            display: grid;
+            grid-template-columns: 2fr 1fr; /* 左2 右1 */
+            gap: 1rem;
+            padding: 1rem;
+            height: calc(100vh - 50px);
+            min-width: 1024px;
+        }
+
+        /* 左侧栏 */
+        .left-col {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            height: 100%;
+        }
+
+        .canvas-container {
+            flex: 2;
+            background: var(--panel-bg);
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            position: relative;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+
+        canvas#simCanvas {
+            background-color: #fafafa;
+            width: 100%;
+            height: 100%;
+        }
+
+        .chart-container {
+            flex: 1;
+            background: var(--panel-bg);
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            padding: 10px;
+            position: relative;
+            min-height: 200px;
+        }
+
+        /* 右侧栏 */
+        .right-col {
+            background: var(--panel-bg);
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+            overflow-y: auto;
+        }
+
+        .control-group h3 {
+            margin-bottom: 1rem;
+            font-size: 1rem;
+            color: #4b5563;
+            border-bottom: 2px solid var(--bg-color);
+            padding-bottom: 0.5rem;
+        }
+
+        .input-row {
+            display: flex;
+            flex-direction: column;
+            margin-bottom: 1rem;
+        }
+
+        .input-label {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 0.5rem;
+            font-size: 0.9rem;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            cursor: pointer;
+        }
+
+        .checkbox-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .checkbox-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.9rem;
+            cursor: pointer;
+        }
+
+        .btn-group {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.8rem;
+        }
+
+        .btn-full {
+            grid-column: 1 / -1;
+        }
+
+        button {
+            padding: 0.6rem 1rem;
+            border: none;
+            border-radius: 6px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        button:hover { opacity: 0.9; transform: translateY(-1px); }
+        button:active { transform: translateY(0); }
+        button:disabled { 
+            background-color: #d1d5db; 
+            color: #9ca3af; 
+            cursor: not-allowed; 
+            transform: none;
+        }
+
+        .btn-primary { background: var(--primary-color); color: white; }
+        .btn-secondary { background: #6b7280; color: white; }
+        .btn-danger { background: #ef4444; color: white; }
+        .btn-action { background: #10b981; color: white; }
+        .btn-replay { background: #8b5cf6; color: white; }
+        .btn-highlight { background: #f59e0b; color: white; } /* 橙色 */
+
+        /* 全局状态显示 */
+        .status-panel {
+            margin-top: auto;
+            padding: 1rem;
+            background: #f8fafc;
+            border-radius: 6px;
+            font-family: monospace;
+            font-size: 0.85rem;
+            color: #334155;
+        }
+
+        /* 模态框 */
+        .modal-overlay {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+
+        .modal-overlay.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .modal {
+            background: white;
+            padding: 2rem;
+            border-radius: 12px;
+            max-width: 600px;
+            width: 90%;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+        }
+
+        .modal h2 { margin-bottom: 1rem; color: var(--primary-color); }
+        .modal ul { margin: 1rem 0 1rem 1.5rem; }
+        .modal li { margin-bottom: 0.5rem; font-size: 0.95rem; }
+        .modal p { line-height: 1.5; font-size: 0.95rem; color: #4b5563; }
+
+    </style>
+</head>
+<body>
+
+    <!-- 顶部导航 -->
+    <nav>
+        <h1>Physics Lab: 竖直圆周运动 (内壁轨道)</h1>
+        <button class="btn-icon" id="btn-help-open">?</button>
+    </nav>
+
+    <!-- 主体区域 -->
+    <main>
+        <!-- 左侧可视区 -->
+        <div class="left-col">
+            <div class="canvas-container">
+                <canvas id="simCanvas"></canvas>
+            </div>
+            <div class="chart-container">
+                <canvas id="chartCanvas"></canvas>
+            </div>
+        </div>
+
+        <!-- 右侧控制区 -->
+        <div class="right-col">
+            <!-- 变量控制 -->
+            <div class="control-group">
+                <h3>初始条件 (Parameters)</h3>
+                
+                <div class="input-row">
+                    <div class="input-label">
+                        <span>最低点初速度 v₀ (m/s)</span>
+                        <span id="val-v0">12.0</span>
+                    </div>
+                    <!-- 临界速度约 sqrt(5gR) = sqrt(5*9.8*5) ≈ 15.6 -->
+                    <input type="range" id="input-v0" min="0" max="25" step="0.1" value="12">
+                </div>
+
+                <div class="input-row">
+                    <div class="input-label">
+                        <span>半径 R (m)</span>
+                        <span id="val-R">5.0</span>
+                    </div>
+                    <input type="range" id="input-R" min="2" max="8" step="0.5" value="5">
+                </div>
+
+                <div class="checkbox-group">
+                    <label class="checkbox-item">
+                        <input type="checkbox" id="chk-velocity" checked> 显示速度矢量 (v)
+                    </label>
+                    <label class="checkbox-item">
+                        <input type="checkbox" id="chk-force" checked> 显示受力矢量 (N, G)
+                    </label>
+                    <label class="checkbox-item">
+                        <input type="checkbox" id="chk-trace" checked> 显示运动轨迹
+                    </label>
+                </div>
+            </div>
+
+            <!-- 播放控制 -->
+            <div class="control-group">
+                <h3>模拟控制 (Playback)</h3>
+                <div class="btn-group">
+                    <button id="btn-play" class="btn-primary">播放 / 暂停</button>
+                    <button id="btn-reset" class="btn-secondary">重置</button>
+                    <button id="btn-replay" class="btn-replay">↺ 重播</button>
+                    
+                    <!-- 新增：跳至脱离点按钮 -->
+                    <button id="btn-detach" class="btn-highlight" disabled>📍 跳至脱离点</button>
+                    
+                    <button id="btn-critical" class="btn-action btn-full">⚡ 设为临界速度 (Complete Loop)</button>
+                </div>
+            </div>
+
+            <!-- 实时状态 -->
+            <div class="status-panel" id="status-panel">
+                状态: 准备就绪<br>
+                高度 (h): -- m<br>
+                支持力 (N): -- N<br>
+                速度 (v): -- m/s
+            </div>
+        </div>
+    </main>
+
+    <!-- 帮助浮层 -->
+    <div class="modal-overlay active" id="helpModal">
+        <div class="modal">
+            <h2>🧪 实验指南：竖直圆周运动</h2>
+            <p>本实验模拟小球在光滑圆轨道内侧的运动。小球从最低点出发。</p>
+            
+            <h3>功能更新：</h3>
+            <ul>
+                <li><strong>捕捉脱离点：</strong> 如果小球中途脱离轨道，点击右侧 <strong>“📍 跳至脱离点”</strong> 按钮，可直接跳转到 $N=0$ 的临界时刻进行观察。</li>
+                <li><strong>图表高亮：</strong> 跳转后，下方的支持力图像会用红点标记出该时刻。</li>
+            </ul>
+
+            <h3>三种运动模式：</h3>
+            <ul>
+                <li><strong>摆动 (Swing):</strong> 初速度较小，小球在下半圆来回摆动 (N > 0)。</li>
+                <li><strong>脱离 (Detach):</strong> 初速度中等，小球在到达最高点前支持力 N 减为 0，脱离轨道。</li>
+                <li><strong>完整圆周 (Loop):</strong> 初速度足够大 (v₀ ≥ √5gR)，小球能通过最高点。</li>
+            </ul>
+
+            <button class="btn-primary" style="width: 100%; margin-top: 1rem;" id="btn-help-close">开始实验</button>
+        </div>
+    </div>
+
+    <script>
+    (function() {
+        /**
+         * 物理常量与配置
+         */
+        const G = 9.8; 
+        const SCALE_FACTOR = 30; 
+        
+        // 状态对象
+        let state = {
+            t: 0,
+            theta: 0,      
+            omega: 0,     
+            x: 0,          
+            y: 0,          
+            vx: 0,
+            vy: 0,
+            N: 0,          
+            isAttached: true,
+            isRunning: false,
+            trace: [],      
+            lastChartUpdate: 0,
+            
+            // 新增：用于记录脱离时刻的完整状态
+            detachRecord: null 
+        };
+
+        // 用户参数
+        let params = {
+            v0: 12,
+            R: 5,
+            showV: true,
+            showF: true,
+            showTrace: true
+        };
+
+        // DOM 元素
+        const canvas = document.getElementById('simCanvas');
+        const ctx = canvas.getContext('2d');
+        const statusPanel = document.getElementById('status-panel');
+        const btnDetach = document.getElementById('btn-detach'); // 获取按钮引用
+        let chartInstance = null;
+        let animationFrameId = null;
+
+        /**
+         * 初始化
+         */
+        function init() {
+            if (window.__sphereSimAnimationFrame) {
+                cancelAnimationFrame(window.__sphereSimAnimationFrame);
+            }
+
+            resizeCanvas();
+            window.addEventListener('resize', resizeCanvas);
+            
+            initChart();
+            bindControls();
+            resetSimulation();
+            
+            loop();
+        }
+
+        function resizeCanvas() {
+            if (!canvas.parentElement) return;
+            const container = canvas.parentElement;
+            canvas.width = container.clientWidth;
+            canvas.height = container.clientHeight;
+            draw();
+        }
+
+        function bindControls() {
+            const v0Input = document.getElementById('input-v0');
+            const RInput = document.getElementById('input-R');
+            const valV0 = document.getElementById('val-v0');
+            const valR = document.getElementById('val-R');
+            
+            if(v0Input) {
+                v0Input.addEventListener('input', (e) => {
+                    params.v0 = parseFloat(e.target.value);
+                    valV0.textContent = params.v0.toFixed(1);
+                    if (!state.isRunning) resetSimulation();
+                });
+            }
+
+            if(RInput) {
+                RInput.addEventListener('input', (e) => {
+                    params.R = parseFloat(e.target.value);
+                    valR.textContent = params.R.toFixed(1);
+                    if (!state.isRunning) resetSimulation();
+                });
+            }
+
+            document.getElementById('chk-velocity').addEventListener('change', e => params.showV = e.target.checked);
+            document.getElementById('chk-force').addEventListener('change', e => params.showF = e.target.checked);
+            document.getElementById('chk-trace').addEventListener('change', e => params.showTrace = e.target.checked);
+
+            document.getElementById('btn-play').addEventListener('click', togglePlay);
+            document.getElementById('btn-reset').addEventListener('click', resetSimulation);
+            document.getElementById('btn-replay').addEventListener('click', replaySimulation);
+            document.getElementById('btn-critical').addEventListener('click', setCriticalVelocity);
+            
+            // 绑定跳转事件
+            if(btnDetach) btnDetach.addEventListener('click', jumpToDetach);
+
+            document.getElementById('btn-help-open').addEventListener('click', () => toggleModal(true));
+            document.getElementById('btn-help-close').addEventListener('click', () => toggleModal(false));
+        }
+
+        function initChart() {
+            const chartCanvas = document.getElementById('chartCanvas');
+            if(!chartCanvas) return;
+            const ctxChart = chartCanvas.getContext('2d');
+            
+            const existingChart = Chart.getChart(chartCanvas);
+            if (existingChart) existingChart.destroy();
+
+            chartInstance = new Chart(ctxChart, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [
+                        {
+                            label: '支持力 N (牛顿)',
+                            data: [],
+                            borderColor: '#3b82f6',
+                            borderWidth: 2,
+                            pointRadius: 0,
+                            tension: 0.4,
+                            cubicInterpolationMode: 'monotone',
+                            order: 2
+                        },
+                        // 新增：专门用于高亮显示脱离点的 Dataset (散点图模式)
+                        {
+                            label: '脱离点',
+                            data: [],
+                            type: 'scatter',
+                            backgroundColor: '#ef4444', // 红色
+                            borderColor: '#ef4444',
+                            pointRadius: 6,
+                            pointHoverRadius: 8,
+                            showLine: false,
+                            order: 1
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: false,
+                    interaction: { intersect: false, mode: 'index' },
+                    scales: {
+                        x: { 
+                            title: { display: true, text: '时间 (s)' },
+                            type: 'linear', // 使用线性轴以便准确绘制 scatter
+                            min: 0,
+                            ticks: { stepSize: 0.5 }
+                        },
+                        y: { 
+                            title: { display: true, text: '支持力 N' }, 
+                            min: 0 
+                        }
+                    },
+                    plugins: {
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return context.dataset.label + ': ' + context.parsed.y.toFixed(2) + ' N';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function updateChart(forceUpdate = false) {
+            if (!chartInstance) return;
+
+            // 实时更新：限制频率，比如20Hz
+            if (state.isRunning && (state.t - state.lastChartUpdate > 0.05)) {
+                
+                // 注意：为了支持回看，我们这里不再 shift 删除旧数据
+                // 仅当数据量极大(例如超过1000点，约50秒)时才开始清理，通常物理实验短于这个时间
+                if (chartInstance.data.labels.length > 1000) {
+                     chartInstance.data.datasets[0].data.shift();
+                     // scatter data doesn't align with labels index 1-to-1, managed separately
+                }
+
+                // 实际上使用 linear x-axis，我们可以直接 push {x, y} 对象
+                // Dataset 0 (Line):
+                chartInstance.data.datasets[0].data.push({
+                    x: state.t,
+                    y: state.isAttached ? state.N : 0
+                });
+
+                chartInstance.update('none');
+                state.lastChartUpdate = state.t;
+            } else if (forceUpdate) {
+                chartInstance.update();
+            }
+        }
+
+        function clearChart() {
+            if (!chartInstance) return;
+            chartInstance.data.datasets[0].data = []; // Line data
+            chartInstance.data.datasets[1].data = []; // Scatter data
+            chartInstance.update();
+        }
+
+        /**
+         * 物理引擎
+         */
+        function resetSimulation() {
+            state.t = 0;
+            state.lastChartUpdate = 0;
+            state.theta = 0; 
+            state.omega = params.v0 / params.R; 
+            state.x = 0;
+            state.y = -params.R;
+            state.vx = params.v0;
+            state.vy = 0;
+            state.isAttached = true;
+            state.isRunning = false;
+            state.trace = [];
+            state.detachRecord = null; // 重置脱离记录
+
+            // 计算初始支持力
+            state.N = G + (params.v0 * params.v0) / params.R; 
+            
+            // 禁用脱离按钮
+            if (btnDetach) {
+                btnDetach.disabled = true;
+                btnDetach.innerHTML = "📍 跳至脱离点";
+            }
+
+            clearChart();
+            updateStatus();
+            draw();
+        }
+
+        function replaySimulation() {
+            resetSimulation();
+            state.isRunning = true;
+        }
+
+        // 新增：跳转到脱离点
+        function jumpToDetach() {
+            if (!state.detachRecord) return;
+
+            // 暂停模拟
+            state.isRunning = false;
+            
+            // 恢复状态
+            const r = state.detachRecord;
+            state.t = r.t;
+            state.x = r.x;
+            state.y = r.y;
+            state.vx = r.vx;
+            state.vy = r.vy;
+            state.theta = r.theta;
+            state.omega = r.omega;
+            state.N = 0; // 理论上脱离点 N=0
+            state.isAttached = true; // 视觉上算附着最后时刻
+            
+            // 恢复轨迹（截取到脱离时刻）
+            // 简单的做法是保留当前所有轨迹，或者不处理轨迹（因为它只是视觉残留）
+            // 为了更好的体验，我们不清除轨迹
+            
+            // 更新图表：添加高亮红点
+            if (chartInstance) {
+                chartInstance.data.datasets[1].data = [{
+                    x: r.t,
+                    y: 0
+                }];
+                chartInstance.update();
+            }
+
+            updateStatus();
+            draw(); // 重绘，draw 函数里会处理 detach 的高亮标记
+        }
+
+        function setCriticalVelocity() {
+            const vCrit = Math.sqrt(5 * G * params.R);
+            params.v0 = vCrit + 0.1; 
+            document.getElementById('input-v0').value = params.v0;
+            document.getElementById('val-v0').textContent = params.v0.toFixed(1);
+            resetSimulation();
+            state.isRunning = true;
+        }
+
+        function togglePlay() {
+            state.isRunning = !state.isRunning;
+        }
+
+        function loop() {
+            if (state.isRunning) {
+                const dt = 1/60;
+                const subSteps = 10;
+                const subDt = dt / subSteps;
+
+                for (let i = 0; i < subSteps; i++) {
+                    updatePhysics(subDt);
+                }
+                
+                if (state.t * 60 % 4 < 1) {
+                    state.trace.push({x: state.x, y: state.y});
+                    if (state.trace.length > 500) state.trace.shift(); // 增加轨迹长度
+                }
+
+                updateStatus();
+                updateChart();
+            }
+            draw();
+            animationFrameId = requestAnimationFrame(loop);
+            window.__sphereSimAnimationFrame = animationFrameId;
+        }
+
+        function updatePhysics(dt) {
+            state.t += dt;
+
+            if (state.isAttached) {
+                const alpha = -(G / params.R) * Math.sin(state.theta);
+                state.omega += alpha * dt;
+                state.theta += state.omega * dt;
+                
+                state.x = params.R * Math.sin(state.theta);
+                state.y = -params.R * Math.cos(state.theta);
+                
+                const v = state.omega * params.R;
+                state.vx = v * Math.cos(state.theta);
+                state.vy = v * Math.sin(state.theta);
+                
+                const vSq = v * v;
+                state.N = (vSq / params.R) + G * Math.cos(state.theta);
+                
+                // 判断脱离
+                if (state.N <= 0) {
+                    state.N = 0;
+                    state.isAttached = false;
+                    
+                    // --- 核心逻辑：记录脱离时刻 ---
+                    if (!state.detachRecord) {
+                        state.detachRecord = {
+                            t: state.t,
+                            x: state.x,
+                            y: state.y,
+                            vx: state.vx,
+                            vy: state.vy,
+                            theta: state.theta,
+                            omega: state.omega
+                        };
+                        
+                        // 激活按钮
+                        if (btnDetach) {
+                            btnDetach.disabled = false;
+                            btnDetach.innerHTML = `📍 跳至脱离点 (t=${state.t.toFixed(2)}s)`;
+                            // 添加动画效果提示
+                            btnDetach.style.transform = "scale(1.05)";
+                            setTimeout(() => btnDetach.style.transform = "", 200);
+                        }
+                    }
+                    // ---------------------------
+                }
+
+            } else {
+                state.vy -= G * dt;
+                state.x += state.vx * dt;
+                state.y += state.vy * dt;
+
+                if (state.y < -params.R) {
+                    state.y = -params.R;
+                    state.vx = 0;
+                    state.vy = 0;
+                    state.isRunning = false;
+                }
+                
+                const distSq = state.x*state.x + state.y*state.y;
+                if (distSq > params.R * params.R) {
+                    state.isRunning = false;
+                }
+            }
+        }
+
+        function updateStatus() {
+            const H = (state.y + params.R).toFixed(2);
+            const N_val = state.N < 0.01 ? 0 : state.N.toFixed(2);
+            const v_mag = Math.sqrt(state.vx*state.vx + state.vy*state.vy).toFixed(2);
+            
+            if(statusPanel) {
+                statusPanel.innerHTML = `
+                    状态: ${state.isAttached ? "🔵 附着中 (On Track)" : "🔴 已脱离 (Projectile)"}<br>
+                    高度 (H): ${H} m<br>
+                    支持力 (N): ${N_val} N<br>
+                    速度 (v): ${v_mag} m/s
+                `;
+            }
+        }
+
+        /**
+         * 渲染逻辑
+         */
+        function draw() {
+            if(!ctx) return;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            const cx = canvas.width / 2; 
+            const cy = canvas.height / 2; 
+
+            drawGrid(ctx, canvas.width, canvas.height);
+
+            // 绘制圆形轨道
+            ctx.beginPath();
+            ctx.arc(cx, cy, params.R * SCALE_FACTOR, 0, Math.PI * 2);
+            ctx.strokeStyle = '#9ca3af';
+            ctx.lineWidth = 4;
+            ctx.stroke();
+            
+            ctx.fillStyle = 'rgba(229, 231, 235, 0.3)';
+            ctx.fill();
+
+            // 绘制圆心
+            ctx.beginPath();
+            ctx.arc(cx, cy, 3, 0, Math.PI*2);
+            ctx.fillStyle = '#6b7280';
+            ctx.fill();
+
+            // 绘制轨迹
+            if (params.showTrace && state.trace.length > 1) {
+                ctx.beginPath();
+                ctx.strokeStyle = 'rgba(239, 68, 68, 0.5)';
+                ctx.lineWidth = 2;
+                for (let i = 0; i < state.trace.length; i++) {
+                    const p = state.trace[i];
+                    const px = cx + p.x * SCALE_FACTOR;
+                    const py = cy - p.y * SCALE_FACTOR; 
+                    if (i===0) ctx.moveTo(px, py);
+                    else ctx.lineTo(px, py);
+                }
+                ctx.stroke();
+            }
+
+            // 绘制小球
+            const ballX = cx + state.x * SCALE_FACTOR;
+            const ballY = cy - state.y * SCALE_FACTOR;
+            
+            ctx.beginPath();
+            ctx.arc(ballX, ballY, 8, 0, Math.PI * 2);
+            ctx.fillStyle = state.isAttached ? '#3b82f6' : '#f59e0b'; 
+            ctx.fill();
+            ctx.stroke();
+
+            // --- 特殊处理：如果当前是脱离点展示模式（暂停且位置吻合） ---
+            if (!state.isRunning && state.detachRecord && Math.abs(state.t - state.detachRecord.t) < 0.01) {
+                // 绘制高亮圈
+                ctx.beginPath();
+                ctx.arc(ballX, ballY, 15, 0, Math.PI*2);
+                ctx.strokeStyle = '#ef4444';
+                ctx.lineWidth = 3;
+                ctx.setLineDash([5, 3]);
+                ctx.stroke();
+                ctx.setLineDash([]); // 还原
+
+                // 绘制标签文本
+                ctx.fillStyle = '#ef4444';
+                ctx.font = 'bold 14px sans-serif';
+                ctx.fillText("脱离点 (N=0)", ballX + 20, ballY - 20);
+                
+                // 绘制此时的重力分量示意（辅助理解）
+                // 径向重力分量此时提供了全部向心力
+                // 画一条虚线指向圆心
+                ctx.beginPath();
+                ctx.moveTo(ballX, ballY);
+                ctx.lineTo(cx, cy);
+                ctx.strokeStyle = 'rgba(59, 130, 246, 0.4)';
+                ctx.lineWidth = 1;
+                ctx.setLineDash([2, 2]);
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
+            // ----------------------------------------------------
+
+            // 绘制矢量
+            if (params.showV) drawVector(ballX, ballY, state.vx, state.vy, '#10b981', 'v');
+            if (params.showF) {
+                drawVector(ballX, ballY, 0, -G, '#6b7280', 'G');
+                
+                if (state.N > 0.1 && state.isAttached) {
+                    const nx = -Math.sin(state.theta);
+                    const ny = Math.cos(state.theta);
+                    drawVector(ballX, ballY, state.N * nx, state.N * ny, '#ef4444', 'N');
+                }
+            }
+        }
+
+        function drawGrid(ctx, w, h) {
+            ctx.strokeStyle = '#f3f4f6';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            for (let x = 0; x < w; x += 40) {
+                ctx.moveTo(x, 0); ctx.lineTo(x, h);
+            }
+            for (let y = 0; y < h; y += 40) {
+                ctx.moveTo(0, y); ctx.lineTo(w, y);
+            }
+            ctx.stroke();
+        }
+
+        function drawVector(x, y, vx, vy, color, label) {
+            const vScale = 4;
+            const endX = x + vx * vScale;
+            const endY = y - vy * vScale; 
+
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            ctx.lineTo(endX, endY);
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            const headLen = 6;
+            const angle = Math.atan2(endY - y, endX - x); 
+            ctx.beginPath();
+            ctx.moveTo(endX, endY);
+            ctx.lineTo(endX - headLen * Math.cos(angle - Math.PI / 6), endY - headLen * Math.sin(angle - Math.PI / 6));
+            ctx.lineTo(endX - headLen * Math.cos(angle + Math.PI / 6), endY - headLen * Math.sin(angle + Math.PI / 6));
+            ctx.fillStyle = color;
+            ctx.fill();
+
+            ctx.fillStyle = '#374151';
+            ctx.font = '12px Arial';
+            ctx.fillText(label, endX + 5, endY);
+        }
+
+        function toggleModal(show) {
+            const modal = document.getElementById('helpModal');
+            if(!modal) return;
+            if (show) modal.classList.add('active');
+            else modal.classList.remove('active');
+        }
+
+        init();
+    })();
+    </script>
+</body>
+</html>

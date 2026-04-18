@@ -1,0 +1,118 @@
+<h2>选择整体构图重心</h2>
+<p class="subtitle">两种都满足你的状态机。区别在于首页与结果页中，输入区、会话区、runtime 的视觉占比和气质。</p>
+
+<div class="cards">
+  <div class="card" data-choice="A" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">A. Quiet Studio</div>
+        <div class="mockup-body" style="display:grid;gap:16px;">
+          <div style="display:grid;grid-template-columns:56px 1fr;gap:14px;min-height:180px;">
+            <div style="background:#dde5df;border-radius:18px;padding:10px;display:grid;gap:8px;">
+              <div style="height:30px;border-radius:12px;background:#f5f1e8;"></div>
+              <div style="height:30px;border-radius:12px;background:#f5f1e8;"></div>
+              <div style="height:30px;border-radius:12px;background:#f5f1e8;"></div>
+            </div>
+            <div style="background:#f7f3ec;border-radius:24px;padding:20px;display:grid;place-items:center;">
+              <div style="width:78%;display:grid;gap:12px;">
+                <div style="height:18px;width:44%;background:#d9ddd7;border-radius:999px;"></div>
+                <div style="height:148px;background:#fffdf9;border:1px solid #d9ddd7;border-radius:28px;"></div>
+              </div>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:260px 1fr 360px;gap:14px;">
+            <div style="background:#eef1ec;border-radius:20px;padding:12px;display:grid;gap:10px;">
+              <div style="height:36px;border-radius:14px;background:#fffdf9;"></div>
+              <div style="height:26px;border-radius:12px;background:#d8dfd7;"></div>
+              <div style="height:26px;border-radius:12px;background:#d8dfd7;"></div>
+              <div style="height:26px;border-radius:12px;background:#d8dfd7;"></div>
+            </div>
+            <div style="background:#fffdf9;border:1px solid #dfe5dc;border-radius:24px;padding:16px;display:grid;gap:12px;">
+              <div style="height:64px;border-radius:18px;background:#eef2ee;"></div>
+              <div style="height:110px;border-radius:20px;background:#f4f0e8;"></div>
+              <div style="height:72px;border-radius:18px;background:#eef2ee;"></div>
+            </div>
+            <div style="background:#f5f1e8;border:1px solid #dde3da;border-radius:24px;padding:14px;display:grid;gap:10px;">
+              <div style="height:38px;border-radius:14px;background:#fffdf9;"></div>
+              <div style="height:170px;border-radius:20px;background:#fffaf1;"></div>
+              <div style="height:62px;border-radius:16px;background:#e5ebe6;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A. Quiet Studio</h3>
+      <p>首页更安静，中心输入框绝对主导。结果页里中间会话区更稳，右侧 runtime 是高质量工作台，但不过度压场。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="B" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">B. Active Workshop</div>
+        <div class="mockup-body" style="display:grid;gap:16px;">
+          <div style="display:grid;grid-template-columns:72px 1fr;gap:14px;min-height:180px;">
+            <div style="background:#dde5df;border-radius:18px;padding:10px;display:grid;gap:8px;">
+              <div style="height:30px;border-radius:12px;background:#f5f1e8;"></div>
+              <div style="height:30px;border-radius:12px;background:#f5f1e8;"></div>
+              <div style="height:30px;border-radius:12px;background:#f5f1e8;"></div>
+            </div>
+            <div style="background:#f7f3ec;border-radius:24px;padding:20px;display:grid;grid-template-columns:1.1fr 0.9fr;gap:14px;">
+              <div style="display:grid;place-items:center;background:#fffdf9;border:1px solid #d9ddd7;border-radius:24px;">
+                <div style="width:82%;display:grid;gap:12px;">
+                  <div style="height:18px;width:54%;background:#d9ddd7;border-radius:999px;"></div>
+                  <div style="height:132px;background:#eef2ee;border-radius:24px;"></div>
+                </div>
+              </div>
+              <div style="background:#fffaf1;border-radius:24px;border:1px solid #e0ddd2;"></div>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:280px 0.9fr 1.05fr;gap:14px;">
+            <div style="background:#eef1ec;border-radius:20px;padding:12px;display:grid;gap:10px;">
+              <div style="height:36px;border-radius:14px;background:#fffdf9;"></div>
+              <div style="height:30px;border-radius:12px;background:#d8dfd7;"></div>
+              <div style="height:30px;border-radius:12px;background:#d8dfd7;"></div>
+              <div style="height:30px;border-radius:12px;background:#d8dfd7;"></div>
+            </div>
+            <div style="background:#fffdf9;border:1px solid #dfe5dc;border-radius:24px;padding:16px;display:grid;gap:12px;">
+              <div style="height:58px;border-radius:18px;background:#eef2ee;"></div>
+              <div style="height:84px;border-radius:18px;background:#f4f0e8;"></div>
+              <div style="height:84px;border-radius:18px;background:#eef2ee;"></div>
+            </div>
+            <div style="background:#f5f1e8;border:1px solid #dde3da;border-radius:24px;padding:14px;display:grid;gap:10px;">
+              <div style="height:38px;border-radius:14px;background:#fffdf9;"></div>
+              <div style="height:202px;border-radius:20px;background:#fffaf1;"></div>
+              <div style="height:68px;border-radius:16px;background:#e5ebe6;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B. Active Workshop</h3>
+      <p>首页更像创作台入口，结果页里右侧 runtime 更有存在感，中间会话更像驱动预览的控制中枢。</p>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="pros-cons">
+    <div class="pros">
+      <h4>我推荐 A 的原因</h4>
+      <ul>
+        <li>更贴近“教师输入需求 -> 系统生成 -> 稳定打磨”的克制感</li>
+        <li>首页不会滑向“半个结果页”</li>
+        <li>结果页中聊天和 artifact 更容易保持专业、安静、可讲授的阅读节奏</li>
+      </ul>
+    </div>
+    <div class="cons">
+      <h4>B 的代价</h4>
+      <ul>
+        <li>更容易把首页做得像轻工作台</li>
+        <li>结果页若控制不好，会让 runtime 压过会话编辑逻辑</li>
+        <li>更接近通用 AI 创作工具，而不是教学 studio</li>
+      </ul>
+    </div>
+  </div>
+</div>

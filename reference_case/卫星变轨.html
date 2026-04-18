@@ -1,0 +1,1481 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>卫星变轨物理仿真 (Satellite Orbit Transfer)</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <style>
+        :root {
+            --primary-color: #3b82f6;
+            --bg-color: #f8fafc;
+            --panel-bg: #ffffff;
+            --text-color: #1e293b;
+            --border-color: #e2e8f0;
+            --success-color: #10b981;
+            --warning-color: #f59e0b;
+            --danger-color: #ef4444;
+        }
+
+        body {
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .main-container {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            height: 100vh;
+            width: 100vw;
+        }
+
+        .left-column {
+            display: grid;
+            grid-template-rows: 2fr 1fr;
+            border-right: 1px solid var(--border-color);
+            position: relative;
+        }
+
+        .canvas-container {
+            background-color: #0f172a;
+            position: relative;
+            overflow: hidden;
+            width: 100%;
+            height: 100%;
+        }
+
+        canvas#simCanvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        .canvas-telemetry {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            color: rgba(255, 255, 255, 0.9);
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 0.9rem;
+            pointer-events: none;
+            line-height: 1.5;
+            text-shadow: 1px 1px 2px rgba(0,0,0,1);
+            z-index: 10;
+        }
+
+        .canvas-viz-controls {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background: rgba(15, 23, 42, 0.4);
+            padding: 8px 12px;
+            border-radius: 8px;
+            backdrop-filter: blur(2px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: #fff;
+            font-size: 0.8rem;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            z-index: 20;
+            transition: background 0.3s;
+        }
+        .canvas-viz-controls:hover {
+            background: rgba(15, 23, 42, 0.7);
+        }
+
+        .canvas-viz-controls label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+        }
+
+        .canvas-viz-controls input[type="checkbox"] {
+            accent-color: var(--primary-color);
+        }
+
+        .teaching-toast {
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.85);
+            color: #fff;
+            padding: 12px 25px;
+            border-radius: 30px;
+            font-size: 0.95rem;
+            text-align: center;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.5s;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.4);
+            max-width: 90%;
+            z-index: 30;
+            line-height: 1.5;
+        }
+        
+        .teaching-toast.show {
+            opacity: 1;
+        }
+
+        .chart-container {
+            background-color: var(--panel-bg);
+            border-top: 1px solid var(--border-color);
+            padding: 10px;
+            box-sizing: border-box;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .right-column {
+            background-color: var(--panel-bg);
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .control-section {
+            background: #fff;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 15px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            transition: all 0.3s ease;
+        }
+
+        .collapsible-header {
+            margin: 0;
+            font-size: 1.1rem;
+            color: #334155;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #f1f5f9;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            user-select: none;
+        }
+        
+        .collapsible-header:hover {
+            color: var(--primary-color);
+        }
+
+        .collapsible-header::after {
+            content: '▼';
+            font-size: 0.8em;
+            transition: transform 0.3s;
+        }
+
+        .control-section.collapsed .collapsible-header::after {
+            transform: rotate(-90deg);
+        }
+        
+        .control-section.collapsed .collapsible-header {
+            border-bottom: none;
+            padding-bottom: 0;
+        }
+
+        .collapsible-content {
+            margin-top: 15px;
+            overflow: hidden;
+            transition: max-height 0.3s ease-out, opacity 0.3s ease-out;
+            max-height: 500px;
+            opacity: 1;
+        }
+
+        .control-section.collapsed .collapsible-content {
+            max-height: 0;
+            opacity: 0;
+            margin-top: 0;
+            padding: 0;
+        }
+
+        .control-row {
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        
+        .control-row label {
+            font-size: 0.9rem;
+            color: #475569;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            margin-top: 5px;
+            cursor: pointer;
+        }
+
+        button {
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: background-color 0.2s;
+        }
+
+        button:hover {
+            background-color: #2563eb;
+        }
+
+        button.secondary {
+            background-color: #64748b;
+        }
+        
+        button.secondary:hover {
+            background-color: #475569;
+        }
+
+        button.danger {
+            background-color: var(--danger-color);
+        }
+
+        button.danger:hover {
+            background-color: #dc2626;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        .btn-group button {
+            flex: 1;
+        }
+
+        .status-display {
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 0.85rem;
+            background: #f1f5f9;
+            padding: 10px;
+            border-radius: 4px;
+            line-height: 1.5;
+        }
+
+        .autopilot-panel {
+            background: #f0f9ff;
+            border: 1px solid #bae6fd;
+            border-radius: 6px;
+            padding: 12px;
+        }
+
+        .autopilot-status {
+            color: #0369a1;
+            font-weight: bold;
+            margin-bottom: 8px;
+            font-size: 0.9rem;
+        }
+
+        .autopilot-btn {
+            background-color: #0284c7;
+            width: 100%;
+            margin-bottom: 5px;
+        }
+        
+        .autopilot-btn:disabled {
+            background-color: #94a3b8;
+            cursor: not-allowed;
+        }
+        
+        .demo-btn {
+            background-color: #7c3aed; 
+            width: 100%;
+            margin-bottom: 5px;
+            font-size: 0.85rem;
+            text-align: left;
+            padding-left: 12px;
+        }
+        .demo-btn:hover { background-color: #6d28d9; }
+
+        .alert-bar {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-weight: bold;
+            z-index: 100;
+            display: none;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            animation: slideDown 0.3s ease-out;
+        }
+        
+        .crash-alert {
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            color: #991b1b;
+        }
+        
+        .fuel-alert {
+            background: #fff7ed;
+            border: 1px solid #fed7aa;
+            color: #9a3412;
+        }
+
+        @keyframes slideDown {
+            from { top: -50px; opacity: 0; }
+            to { top: 20px; opacity: 1; }
+        }
+
+        dialog {
+            border: none;
+            border-radius: 8px;
+            padding: 20px;
+            max-width: 500px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+            font-family: inherit;
+        }
+        
+        dialog::backdrop { background: rgba(0, 0, 0, 0.5); }
+        dialog h2 { margin-top: 0; color: var(--primary-color); }
+        dialog ul { padding-left: 20px; line-height: 1.6; }
+        dialog button { margin-top: 15px; width: 100%; }
+
+        @media (max-width: 768px) {
+            .main-container {
+                grid-template-columns: 1fr;
+                grid-template-rows: 1fr 1fr;
+            }
+            .left-column { grid-template-rows: 1fr 1fr; overflow: hidden; }
+            .right-column { overflow-y: auto; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="main-container">
+    <div class="left-column">
+        <div class="canvas-container">
+            <canvas id="simCanvas"></canvas>
+            
+            <div id="canvasTelemetry" class="canvas-telemetry">
+                准备就绪...
+            </div>
+
+            <div class="canvas-viz-controls">
+                <label><input type="checkbox" id="checkVelocity"> 显示速度 (Velocity)</label>
+                <label><input type="checkbox" id="checkGravity"> 显示引力 (Gravity)</label>
+                <label><input type="checkbox" id="checkGrid" checked> 显示网格 (Grid)</label>
+                <label><input type="checkbox" id="checkPrediction" checked> 预测轨道 (Forecast)</label>
+            </div>
+
+            <div id="teachingToast" class="teaching-toast"></div>
+            
+            <div id="crashAlert" class="alert-bar crash-alert">💥 警告：卫星已坠毁！</div>
+            <div id="fuelAlert" class="alert-bar fuel-alert">🚫 燃料不足：目标轨道过大</div>
+        </div>
+        <div class="chart-container">
+            <canvas id="chartCanvas"></canvas>
+        </div>
+    </div>
+
+    <div class="right-column">
+        <!-- 播放控制 -->
+        <div class="control-section">
+            <h3 class="collapsible-header">播放控制 (Playback)</h3>
+            <div class="collapsible-content">
+                <div class="btn-group">
+                    <button id="btnPlayPause">暂停</button>
+                    <button id="btnReset" class="secondary">重置</button>
+                </div>
+                
+                <div class="control-row" style="flex-direction: column; align-items: flex-start;">
+                    <label for="speedSelect">仿真速度 (Speed): <span id="speedVal">1.0x</span></label>
+                    <input type="range" id="speedSelect" min="0.5" max="5.0" step="0.5" value="1.0">
+                </div>
+            </div>
+        </div>
+
+        <!-- 手动变轨操作 (移至上方) -->
+        <div class="control-section">
+            <h3 class="collapsible-header">手动操作 (Manual)</h3>
+            <div class="collapsible-content">
+                <div class="control-row" style="flex-direction: column; align-items: flex-start;">
+                    <label>加速/减速程度 (Delta V):</label>
+                    <input type="range" id="thrustPower" min="10" max="100" value="30">
+                </div>
+                <div class="btn-group">
+                    <button id="btnPrograde" style="background-color: #10b981;">加速 (Prograde)</button>
+                    <button id="btnRetrograde" class="danger">减速 (Retrograde)</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 教学演示 (默认折叠) -->
+        <div class="control-section collapsed" id="demoSection">
+            <h3 class="collapsible-header">教学演示 (Teaching Mode)</h3>
+            <div class="collapsible-content">
+                <div class="btn-group" style="flex-direction: column;">
+                    <button id="btnDemoNonApsis" class="demo-btn">🧪 演示1：非拱点变轨 (3条轨道)</button>
+                    <button id="btnDemoRaisePeri" class="demo-btn">📈 演示2：远地点加速 (5条轨道)</button>
+                    <button id="btnDemoRaiseApo" class="demo-btn">📉 演示3：近地点减速 (5条轨道)</button>
+                </div>
+                <div style="font-size: 0.8rem; color: #64748b; margin-top: 5px;">
+                    * 演示自动保存历史轨迹。
+                </div>
+            </div>
+        </div>
+
+        <!-- 自动变轨 (默认折叠) -->
+        <div class="control-section collapsed" id="autoSection">
+            <h3 class="collapsible-header">自动驾驶 (Auto Pilot)</h3>
+            <div class="collapsible-content">
+                <div class="autopilot-panel">
+                    <div id="autopilotStatus" class="autopilot-status">系统待机中...</div>
+                    <div class="btn-group" style="flex-direction: column;">
+                        <button id="btnAutoHigh" class="autopilot-btn">⬆️ 一键升轨 (To High Orbit)</button>
+                        <button id="btnAutoLow" class="autopilot-btn">⬇️ 一键降轨 (To Low Orbit)</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<dialog id="helpModal">
+    <h2>🚀 卫星变轨仿真指南</h2>
+    <p>欢迎使用交互式卫星变轨模拟器！</p>
+    <ul>
+        <li><strong>多段演示：</strong> 展开<b>“教学演示”</b>面板，系统将展示复杂的变轨过程，并自动画出<b>“幽灵轨道”</b>以便对比。</li>
+        <li><strong>演示1：</strong> 展示如果在非拱点变轨，轨道轴向会发生旋转。</li>
+        <li><strong>演示2 & 3：</strong> 连续4次点火，展示近地点/远地点的逐级抬高或降低。所有轨迹严格相切。</li>
+    </ul>
+    <button id="btnCloseHelp">开始实验</button>
+</dialog>
+
+<script>
+class PhysicsEngine {
+    constructor() {
+        this.G = 1.0; 
+        this.M = 1000; 
+        this.mu = this.G * this.M;
+        this.dt = 0.1; 
+        this.state = { x: 0, y: 0, vx: 0, vy: 0, t: 0 };
+        
+        const r0 = 200;
+        const v0 = Math.sqrt(this.mu / r0); 
+        this.initialState = { x: r0, y: 0, vx: 0, vy: v0 }; 
+        this.reset();
+    }
+
+    reset() {
+        this.state = { ...this.initialState, t: 0 };
+    }
+
+    getAcceleration(x, y) {
+        const r2 = x*x + y*y;
+        const r = Math.sqrt(r2);
+        const F = -(this.mu) / (r2 * r); 
+        return { ax: F * x, ay: F * y };
+    }
+
+    calculateNextState(currState, dt) {
+        const { x, y, vx, vy, t } = currState;
+        const a1 = this.getAcceleration(x, y);
+        const k1_vx = a1.ax; const k1_vy = a1.ay; const k1_dx = vx; const k1_dy = vy;
+        const a2 = this.getAcceleration(x + 0.5*k1_dx*dt, y + 0.5*k1_dy*dt);
+        const k2_vx = a2.ax; const k2_vy = a2.ay; const k2_dx = vx + 0.5*k1_vx*dt; const k2_dy = vy + 0.5*k1_vy*dt;
+        const a3 = this.getAcceleration(x + 0.5*k2_dx*dt, y + 0.5*k2_dy*dt);
+        const k3_vx = a3.ax; const k3_vy = a3.ay; const k3_dx = vx + 0.5*k2_vx*dt; const k3_dy = vy + 0.5*k2_vy*dt;
+        const a4 = this.getAcceleration(x + k3_dx*dt, y + k3_dy*dt);
+        const k4_vx = a4.ax; const k4_vy = a4.ay; const k4_dx = vx + k3_vx*dt; const k4_dy = vy + k3_vy*dt;
+
+        return {
+            x: x + (dt/6) * (k1_dx + 2*k2_dx + 2*k3_dx + k4_dx),
+            y: y + (dt/6) * (k1_dy + 2*k2_dy + 2*k3_dy + k4_dy),
+            vx: vx + (dt/6) * (k1_vx + 2*k2_vx + 2*k3_vx + k4_vx),
+            vy: vy + (dt/6) * (k1_vy + 2*k2_vy + 2*k3_vy + k4_vy),
+            t: t + dt
+        };
+    }
+
+    step() {
+        this.state = this.calculateNextState(this.state, this.dt);
+        return { ...this.state };
+    }
+
+    getKeplerianElements() {
+        const { x, y, vx, vy } = this.state;
+        const r = Math.sqrt(x*x + y*y);
+        const v2 = vx*vx + vy*vy;
+        const rv_dot = x*vx + y*vy;
+        const term1 = v2 - this.mu / r;
+        const ex = (1/this.mu) * (term1 * x - rv_dot * vx);
+        const ey = (1/this.mu) * (term1 * y - rv_dot * vy);
+        const e = Math.sqrt(ex*ex + ey*ey);
+        const invA = 2/r - v2/this.mu;
+        
+        if (invA <= 1e-10) return { isClosed: false, e: e };
+        const a = 1 / invA;
+        if (a > 50000) return { isClosed: false, e: e };
+
+        const eClamped = Math.min(e, 0.9999999);
+        const b = a * Math.sqrt(1 - eClamped*eClamped);
+        const omega = Math.atan2(ey, ex);
+        const c_dist = a * eClamped;
+        const centerX = -c_dist * Math.cos(omega);
+        const centerY = -c_dist * Math.sin(omega);
+
+        return { isClosed: true, a, b, e: eClamped, omega, center: { x: centerX, y: centerY } };
+    }
+
+    predictPath(steps = 4000, dtMultiplier = 5.0) {
+        const predDt = this.dt * dtMultiplier;
+        let tempState = { ...this.state };
+        const path = [];
+        const recordInterval = 5; 
+        for (let i = 0; i < steps; i++) {
+            tempState = this.calculateNextState(tempState, predDt);
+            if (tempState.x**2 + tempState.y**2 < 30**2) break;
+            if (i % recordInterval === 0) path.push({ x: tempState.x, y: tempState.y });
+        }
+        return path;
+    }
+
+    checkOrbitLimit(deltaV) {
+        const { x, y, vx, vy } = this.state;
+        const vMag = Math.sqrt(vx*vx + vy*vy);
+        if (vMag === 0) return true;
+        
+        const ux = vx / vMag;
+        const uy = vy / vMag;
+        const newVx = vx + ux * deltaV;
+        const newVy = vy + uy * deltaV;
+        const v2 = newVx*newVx + newVy*newVy;
+        const r = Math.sqrt(x*x + y*y);
+        const invA = 2/r - v2/this.mu;
+        
+        if (invA <= 0.0008) return false; 
+        return true; 
+    }
+
+    applyDeltaV(factor) {
+        const vMag = Math.sqrt(this.state.vx**2 + this.state.vy**2);
+        if (vMag === 0) return;
+        const ux = this.state.vx / vMag;
+        const uy = this.state.vy / vMag;
+        this.state.vx += ux * factor;
+        this.state.vy += uy * factor;
+    }
+    
+    checkCollision() {
+        const r = Math.sqrt(this.state.x**2 + this.state.y**2);
+        return r < 32;
+    }
+
+    getState() { return { ...this.state }; }
+    setState(newState) { this.state = { ...newState }; }
+    
+    getOrbitalPeriod() {
+        const els = this.getKeplerianElements();
+        if (!els.isClosed) return 1000; 
+        return 2 * Math.PI * Math.sqrt(Math.pow(els.a, 3) / this.mu);
+    }
+}
+
+class Renderer {
+    constructor(canvasId) {
+        this.canvas = document.getElementById(canvasId);
+        this.ctx = this.canvas.getContext('2d');
+        this.width = this.canvas.width;
+        this.height = this.canvas.height;
+        this.scale = 1.0; 
+        this.centerX = 0;
+        this.centerY = 0;
+        this.resize();
+        window.addEventListener('resize', () => this.resize());
+    }
+
+    resize() {
+        const parent = this.canvas.parentElement;
+        this.canvas.width = parent.clientWidth;
+        this.canvas.height = parent.clientHeight;
+        this.width = this.canvas.width;
+        this.height = this.canvas.height;
+        this.centerX = this.width / 2;
+        this.centerY = this.height / 2;
+    }
+
+    clear() {
+        this.ctx.fillStyle = '#0f172a';
+        this.ctx.fillRect(0, 0, this.width, this.height);
+    }
+
+    toScreen(x, y) {
+        return {
+            x: this.centerX + x * this.scale,
+            y: this.centerY - y * this.scale 
+        };
+    }
+
+    updateScale(state, orbitElements) {
+        let maxDist = Math.sqrt(state.x**2 + state.y**2);
+        if (orbitElements && orbitElements.isClosed && orbitElements.e < 0.95) {
+            const r_apo = orbitElements.a * (1 + orbitElements.e);
+            const limit = Math.max(maxDist * 3, 2000); 
+            maxDist = Math.max(maxDist, Math.min(r_apo, limit));
+        }
+        const viewRadius = Math.max(maxDist * 1.2, 300);
+        const screenMinHalf = Math.min(this.width, this.height) / 2;
+        let targetScale = screenMinHalf / viewRadius;
+        this.scale = this.scale * 0.9 + targetScale * 0.1;
+    }
+
+    draw(state, history, orbitElements, predictionPath, options, ghostOrbits = []) {
+        this.updateScale(state, orbitElements);
+        this.clear();
+        const ctx = this.ctx;
+        
+        if (options.showGrid) this.drawGrid();
+
+        const earthPos = this.toScreen(0, 0);
+        const earthRadius = 30 * this.scale;
+        ctx.beginPath();
+        ctx.arc(earthPos.x, earthPos.y, Math.max(earthRadius, 2), 0, Math.PI * 2);
+        const grad = ctx.createRadialGradient(earthPos.x, earthPos.y, earthRadius * 0.2, earthPos.x, earthPos.y, earthRadius);
+        grad.addColorStop(0, '#60a5fa');
+        grad.addColorStop(1, '#1d4ed8');
+        ctx.fillStyle = grad;
+        ctx.fill();
+        
+        if (ghostOrbits.length > 0) {
+            ghostOrbits.forEach((ghost, idx) => {
+                const alpha = 0.3 + (idx / ghostOrbits.length) * 0.4;
+                this.drawKeplerianOrbit(ghost, `rgba(255, 255, 255, ${alpha})`, false);
+            });
+        }
+
+        if (options.showPrediction) {
+            if (orbitElements.isClosed) {
+                this.drawKeplerianOrbit(orbitElements, 'rgba(255, 255, 255, 0.6)', true);
+            } else if (predictionPath && predictionPath.length > 0) {
+                ctx.beginPath();
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+                ctx.lineWidth = 1.5;
+                ctx.setLineDash([5, 5]);
+                for (let i = 0; i < predictionPath.length; i++) {
+                    const p = this.toScreen(predictionPath[i].x, predictionPath[i].y);
+                    if (i === 0) ctx.moveTo(p.x, p.y);
+                    else ctx.lineTo(p.x, p.y);
+                }
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
+        }
+
+        if (history.length > 1) {
+            ctx.beginPath();
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+            ctx.lineWidth = 1.5;
+            const startIdx = Math.max(0, history.length - 8000); 
+            const step = history.length > 2000 ? 2 : 1;
+            let first = true;
+            for (let i = startIdx; i < history.length; i += step) {
+                const h = history[i];
+                const p = this.toScreen(h.x, h.y);
+                if (first) { ctx.moveTo(p.x, p.y); first = false; }
+                else ctx.lineTo(p.x, p.y);
+            }
+            const currentP = this.toScreen(state.x, state.y);
+            ctx.lineTo(currentP.x, currentP.y);
+            ctx.stroke();
+        }
+
+        const satP = this.toScreen(state.x, state.y);
+        ctx.beginPath();
+        ctx.arc(satP.x, satP.y, Math.max(6 * this.scale, 3), 0, Math.PI * 2);
+        ctx.fillStyle = '#fbbf24';
+        ctx.fill();
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        const vMag = Math.sqrt(state.vx**2 + state.vy**2);
+        const gMag = 1000 / (state.x**2 + state.y**2); 
+        const vLen = Math.min(Math.max(vMag * 15, 20), 120); 
+        const gLen = Math.min(Math.max(gMag * 1500, 20), 120);
+
+        if (options.showVelocity) this.drawArrow(satP.x, satP.y, state.vx, -state.vy, vLen, '#10b981', 'v');
+        if (options.showGravity) this.drawArrow(satP.x, satP.y, -state.x, state.y, gLen, '#ef4444', 'Fg');
+        
+        if (orbitElements.isClosed && orbitElements.e > 0.05) {
+            this.drawOrbitMarkers(orbitElements);
+        }
+    }
+
+    drawKeplerianOrbit(el, color, dashed) {
+        if (!el.b || isNaN(el.b)) return; 
+        const ctx = this.ctx;
+        const centerScreen = this.toScreen(el.center.x, el.center.y);
+        const radiusX = el.a * this.scale;
+        const radiusY = el.b * this.scale;
+        if (Math.abs(centerScreen.x) > 1e7 || Math.abs(centerScreen.y) > 1e7) return;
+        const rotation = -el.omega;
+        ctx.save();
+        ctx.beginPath();
+        ctx.translate(centerScreen.x, centerScreen.y);
+        ctx.rotate(rotation);
+        ctx.ellipse(0, 0, radiusX, radiusY, 0, 0, 2 * Math.PI);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.5;
+        if (dashed) ctx.setLineDash([8, 6]);
+        ctx.stroke();
+        ctx.restore();
+        ctx.setLineDash([]);
+    }
+    
+    drawOrbitMarkers(el) {
+        const ctx = this.ctx;
+        const rotation = -el.omega;
+        const centerScreen = this.toScreen(el.center.x, el.center.y);
+        const a = el.a * this.scale;
+        ctx.save();
+        ctx.translate(centerScreen.x, centerScreen.y);
+        ctx.rotate(rotation);
+        ctx.font = "bold 14px Arial";
+        ctx.fillStyle = "#fbbf24";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("P", a + 15, 0);
+        ctx.fillStyle = "#60a5fa";
+        ctx.fillText("A", -a - 15, 0);
+        ctx.restore();
+    }
+
+    drawGrid() {
+        const ctx = this.ctx;
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+        ctx.lineWidth = 1;
+        const targetScreenStep = 100;
+        let worldStep = targetScreenStep / this.scale;
+        const exponent = Math.floor(Math.log10(worldStep));
+        const base = Math.pow(10, exponent);
+        if (worldStep / base < 2) worldStep = 2 * base;
+        else if (worldStep / base < 5) worldStep = 5 * base;
+        else worldStep = 10 * base;
+
+        const leftWorld = -this.centerX / this.scale;
+        const rightWorld = (this.width - this.centerX) / this.scale;
+        const topWorld = (this.centerY - this.height) / (-this.scale);
+        const bottomWorld = (this.centerY - 0) / (-this.scale);
+        const minX = Math.min(leftWorld, rightWorld); const maxX = Math.max(leftWorld, rightWorld);
+        const minY = Math.min(topWorld, bottomWorld); const maxY = Math.max(topWorld, bottomWorld);
+        const startX = Math.floor(minX / worldStep) * worldStep;
+        const startY = Math.floor(minY / worldStep) * worldStep;
+
+        for(let x = startX; x < maxX; x += worldStep) {
+            const screenX = this.toScreen(x, 0).x;
+            ctx.beginPath(); ctx.moveTo(screenX, 0); ctx.lineTo(screenX, this.height); ctx.stroke();
+        }
+        for(let y = startY; y < maxY; y += worldStep) {
+            const screenY = this.toScreen(0, y).y;
+            ctx.beginPath(); ctx.moveTo(0, screenY); ctx.lineTo(this.width, screenY); ctx.stroke();
+        }
+    }
+
+    drawArrow(screenX, screenY, vx, vy, length, color, label) {
+        const ctx = this.ctx;
+        const headlen = 8;
+        const angle = Math.atan2(vy, vx);
+        const endX = screenX + length * Math.cos(angle);
+        const endY = screenY + length * Math.sin(angle);
+        ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(screenX, screenY); ctx.lineTo(endX, endY); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(endX, endY);
+        ctx.lineTo(endX - headlen * Math.cos(angle - Math.PI / 6), endY - headlen * Math.sin(angle - Math.PI / 6));
+        ctx.lineTo(endX - headlen * Math.cos(angle + Math.PI / 6), endY - headlen * Math.sin(angle + Math.PI / 6));
+        ctx.fill();
+        if (label) { ctx.fillStyle = '#fff'; ctx.font = '12px Arial'; ctx.fillText(label, endX + 10, endY); }
+    }
+}
+
+class UIController {
+    constructor() {
+        this.engine = new PhysicsEngine();
+        this.renderer = new Renderer('simCanvas');
+        this.history = []; 
+        this.predictionPath = []; 
+        this.orbitElements = {}; 
+        this.ghostOrbits = []; 
+        this.isPlaying = true;
+        this.speedMultiplier = 1.0;
+        this.lastChartUpdateTime = 0; 
+        this.chartTimeWindow = 5000; 
+        
+        this.autoPilot = {
+            active: false,
+            phase: 'IDLE', 
+            targetRadius: 0,
+            mode: 'HIGH', 
+            waitingForApsis: false
+        };
+        
+        this.demoMode = {
+            active: false,
+            phase: 'IDLE',
+            step: 0,
+            waitStartTime: 0,
+            waitDuration: 0,
+            targetAngle: 0 
+        };
+
+        this.initChart();
+        this.els = {
+            btnPlayPause: document.getElementById('btnPlayPause'),
+            btnReset: document.getElementById('btnReset'),
+            speedSelect: document.getElementById('speedSelect'),
+            speedVal: document.getElementById('speedVal'),
+            btnPrograde: document.getElementById('btnPrograde'),
+            btnRetrograde: document.getElementById('btnRetrograde'),
+            thrustPower: document.getElementById('thrustPower'),
+            
+            checkVelocity: document.getElementById('checkVelocity'),
+            checkGravity: document.getElementById('checkGravity'),
+            checkGrid: document.getElementById('checkGrid'),
+            checkPrediction: document.getElementById('checkPrediction'),
+            
+            btnAutoHigh: document.getElementById('btnAutoHigh'),
+            btnAutoLow: document.getElementById('btnAutoLow'),
+            autopilotStatus: document.getElementById('autopilotStatus'),
+            
+            btnDemoNonApsis: document.getElementById('btnDemoNonApsis'),
+            btnDemoRaisePeri: document.getElementById('btnDemoRaisePeri'),
+            btnDemoRaiseApo: document.getElementById('btnDemoRaiseApo'),
+            
+            crashAlert: document.getElementById('crashAlert'),
+            fuelAlert: document.getElementById('fuelAlert'),
+            teachingToast: document.getElementById('teachingToast'),
+            telemetry: document.getElementById('canvasTelemetry'),
+            helpModal: document.getElementById('helpModal'),
+            btnCloseHelp: document.getElementById('btnCloseHelp')
+        };
+        
+        this.setupEventListeners();
+        this.recordState();
+        this.loop();
+        this.els.helpModal.showModal();
+    }
+
+    initChart() {
+        if (typeof Chart === 'undefined') return;
+        const ctx = document.getElementById('chartCanvas').getContext('2d');
+        this.chart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: '卫星速度 (v) [正:逆时针, 负:顺时针]',
+                    data: [],
+                    borderColor: 'rgb(59, 130, 246)',
+                    borderWidth: 2,
+                    pointRadius: 0,
+                    tension: 0.1,
+                    segment: {
+                        borderColor: ctx => ctx.p0.parsed.y < 0 ? 'rgb(239, 68, 68)' : undefined
+                    }
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: false,
+                scales: {
+                    x: { type: 'linear', title: { display: true, text: '时间 (t)' }, ticks: { maxTicksLimit: 10 } },
+                    y: { 
+                        title: { display: true, text: '速度 (Velocity)' },
+                        ticks: { callback: function(value) { return value.toFixed(3); } },
+                        grace: '20%'
+                    }
+                },
+                plugins: { 
+                    legend: { display: true },
+                    tooltip: {
+                        callbacks: {
+                            label: (context) => `速度: ${context.parsed.y.toFixed(3)}`
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    setupEventListeners() {
+        document.querySelectorAll('.collapsible-header').forEach(header => {
+            header.addEventListener('click', () => {
+                header.parentElement.classList.toggle('collapsed');
+            });
+        });
+
+        this.els.btnPlayPause.onclick = () => this.togglePlay();
+        this.els.btnReset.onclick = () => this.resetSimulation();
+        this.els.speedSelect.oninput = (e) => {
+            this.speedMultiplier = parseFloat(e.target.value);
+            this.els.speedVal.innerText = this.speedMultiplier + 'x';
+        };
+        
+        this.els.btnPrograde.onclick = () => this.applyThrust(1);
+        this.els.btnRetrograde.onclick = () => this.applyThrust(-1);
+        
+        this.els.btnAutoHigh.onclick = () => this.startHohmannTransfer(450); 
+        this.els.btnAutoLow.onclick = () => this.startHohmannTransfer(200);
+        
+        this.els.btnDemoNonApsis.onclick = () => this.runDemo('NON_APSIS');
+        this.els.btnDemoRaisePeri.onclick = () => this.runDemo('RAISE_PE');
+        this.els.btnDemoRaiseApo.onclick = () => this.runDemo('RAISE_APO');
+        
+        this.els.btnCloseHelp.onclick = () => this.els.helpModal.close();
+    }
+
+    saveGhostOrbit() {
+        const els = this.engine.getKeplerianElements();
+        if (els.isClosed) {
+            // Dedup logic
+            if (this.ghostOrbits.length > 0) {
+                const last = this.ghostOrbits[this.ghostOrbits.length - 1];
+                if (Math.abs(last.a - els.a) < 2 && Math.abs(last.e - els.e) < 0.01) {
+                    return; 
+                }
+            }
+            this.ghostOrbits.push(els);
+        }
+    }
+    
+    // Snap satellite to perfect position on current orbit to fix visual glitch
+    snapToTargetAngle(targetAngle, rMag) {
+         // Snapping to exact angle prevents drift
+         // But we must respect the current radius magnitude to stay on the same ellipse
+         // rMag is passed from current state
+         this.engine.state.x = rMag * Math.cos(targetAngle);
+         this.engine.state.y = rMag * Math.sin(targetAngle);
+    }
+    
+    getAngleDiff(angle1, angle2) {
+        let diff = Math.abs(angle1 - angle2);
+        while (diff > Math.PI) diff = Math.abs(diff - 2 * Math.PI);
+        return diff;
+    }
+
+    runDemo(type) {
+        this.resetSimulation();
+        this.demoMode.active = true;
+        this.demoMode.phase = 'STEP_1';
+        this.demoMode.type = type;
+        this.demoMode.step = 0;
+        this.demoMode.waitStartTime = 0;
+        this.ghostOrbits = []; 
+        this.saveGhostOrbit(); 
+        
+        if (type === 'NON_APSIS') {
+            this.showToast("演示1：非拱点变轨。步骤1：加速进入椭圆轨道...");
+            this.engine.applyDeltaV(0.5); 
+            this.demoMode.waitDuration = this.engine.getOrbitalPeriod() * 0.4;
+            this.demoMode.waitStartTime = this.engine.getState().t;
+        } 
+        else if (type === 'RAISE_PE') {
+            this.showToast("演示2：远地点加速(4次)。步骤1：加速进入椭圆...");
+            this.engine.applyDeltaV(0.5); 
+            // First burn at 0 deg, so Apogee is at PI.
+            this.demoMode.targetAngle = Math.PI; 
+            this.demoMode.waitDuration = this.engine.getOrbitalPeriod() * 0.55; 
+            this.demoMode.waitStartTime = this.engine.getState().t;
+        }
+        else if (type === 'RAISE_APO') { 
+            const r_high = 450;
+            const v_high = Math.sqrt(this.engine.mu / r_high);
+            this.engine.setState({x: r_high, y: 0, vx: 0, vy: v_high, t: 0});
+            this.ghostOrbits = [];
+            this.saveGhostOrbit(); 
+            
+            this.demoMode.phase = 'INIT_COAST';
+            this.demoMode.waitDuration = this.engine.getOrbitalPeriod() * 0.75; 
+            this.demoMode.waitStartTime = this.engine.getState().t;
+            this.showToast("演示3：近地点减速。步骤0：初始高圆轨道运行中...");
+        }
+        
+        if (!this.isPlaying) this.togglePlay();
+    }
+    
+    processDemo() {
+        if (!this.demoMode.active) return;
+        
+        const state = this.engine.getState();
+        const r = Math.sqrt(state.x**2 + state.y**2);
+        const els = this.engine.getKeplerianElements();
+        const timeSinceLast = state.t - this.demoMode.waitStartTime;
+        
+        if (timeSinceLast < this.demoMode.waitDuration) return;
+
+        // Demo 3 Initial Coast
+        if (this.demoMode.type === 'RAISE_APO' && this.demoMode.phase === 'INIT_COAST') {
+            this.demoMode.phase = 'STEP_1';
+            this.showToast("步骤1：减速进入椭圆轨道...");
+            // Burn at Angle ~0 (after 3/4 circle from start)
+            // Or just force snap to 0 to be clean? No, let it flow.
+            // Burn 1 is initiation, sets Apogee at current location.
+            // Perigee will be opposite.
+            this.engine.applyDeltaV(-0.4);
+            
+            // Set target for future burns: Opposite to current angle.
+            const currentAngle = Math.atan2(state.y, state.x);
+            let opposite = currentAngle + Math.PI;
+            if (opposite > Math.PI) opposite -= 2*Math.PI;
+            this.demoMode.targetAngle = opposite; // Perigee location
+            
+            this.demoMode.waitDuration = this.engine.getOrbitalPeriod() * 0.55;
+            this.demoMode.waitStartTime = state.t;
+            return;
+        }
+
+        // Demo 1
+        if (this.demoMode.type === 'NON_APSIS') {
+            if (this.demoMode.phase === 'STEP_1') {
+                this.saveGhostOrbit(); 
+                this.engine.applyDeltaV(0.3); 
+                this.updatePrediction(); 
+                this.showToast("步骤2：在半山腰再次加速，轨道发生进动！", 6000);
+                this.demoMode.active = false; 
+            }
+        }
+        
+        // Demo 2: Apogee Burns
+        else if (this.demoMode.type === 'RAISE_PE') {
+            const currentAngle = Math.atan2(state.y, state.x);
+            const angleDiff = this.getAngleDiff(currentAngle, this.demoMode.targetAngle);
+            const isAtTarget = angleDiff < 0.1; 
+
+            if (isAtTarget && timeSinceLast > 10) {
+                // FORCE SNAP to exact target angle to ensure perfect overlap
+                this.snapToTargetAngle(this.demoMode.targetAngle, r);
+                // Also force velocity to be perfectly tangential
+                this.correctVelocityDirection(this.engine.getState(), r); 
+                
+                // Save ghost AFTER snap but BEFORE burn
+                this.saveGhostOrbit();
+                
+                this.demoMode.step++;
+                let delta = 0;
+                let msg = "";
+                
+                if (this.demoMode.step === 1) {
+                    delta = 0.15; msg = "阶段2：远地点加速，抬高近地点 (Track 3)";
+                    this.demoMode.phase = 'STEP_2';
+                } 
+                else if (this.demoMode.step === 2) {
+                    // Circularize
+                    const vCirc = Math.sqrt(this.engine.mu / r);
+                    // Use snapped state velocity
+                    const snappedState = this.engine.getState();
+                    const vCurr = Math.sqrt(snappedState.vx**2 + snappedState.vy**2);
+                    delta = vCirc - vCurr; 
+                    msg = "阶段3：远地点再次加速，圆化轨道 (Track 4)";
+                    this.demoMode.phase = 'STEP_3';
+                }
+                else if (this.demoMode.step === 3) {
+                    delta = 0.2; msg = "阶段4：同位置再次加速，进入大椭圆 (Track 5)";
+                    this.demoMode.active = false; 
+                }
+                
+                if (delta !== 0) {
+                    this.engine.applyDeltaV(delta);
+                    this.updatePrediction();
+                    this.showToast(msg, 5000);
+                    this.demoMode.waitStartTime = state.t;
+                    this.demoMode.waitDuration = this.engine.getOrbitalPeriod() * 0.9; 
+                }
+            }
+        }
+        
+        // Demo 3: Perigee Decels
+        else if (this.demoMode.type === 'RAISE_APO' && this.demoMode.phase.startsWith('STEP')) {
+            const currentAngle = Math.atan2(state.y, state.x);
+            const angleDiff = this.getAngleDiff(currentAngle, this.demoMode.targetAngle);
+            const isAtTarget = angleDiff < 0.1;
+            
+            if (isAtTarget && timeSinceLast > 10) {
+                // Force snap
+                this.snapToTargetAngle(this.demoMode.targetAngle, r);
+                this.correctVelocityDirection(this.engine.getState(), r);
+                
+                this.saveGhostOrbit(); 
+                
+                this.demoMode.step++;
+                let delta = 0;
+                let msg = "";
+                
+                if (this.demoMode.step === 1) {
+                    delta = -0.2; msg = "阶段2：近地点减速，降低远地点 (Track 3)";
+                    this.demoMode.phase = 'STEP_2';
+                }
+                else if (this.demoMode.step === 2) {
+                    // Circularize
+                    const vCirc = Math.sqrt(this.engine.mu / r);
+                    const snappedState = this.engine.getState();
+                    const vCurr = Math.sqrt(snappedState.vx**2 + snappedState.vy**2);
+                    delta = -(vCurr - vCirc);
+                    msg = "阶段3：近地点减速，圆化轨道 (Track 4)";
+                    this.demoMode.phase = 'STEP_3';
+                }
+                else if (this.demoMode.step === 3) {
+                    delta = -0.15; msg = "阶段4：同位置再次减速，进入低椭圆 (Track 5)";
+                    this.demoMode.active = false; 
+                }
+                
+                if (delta !== 0) {
+                    this.engine.applyDeltaV(delta);
+                    this.updatePrediction();
+                    this.showToast(msg, 5000);
+                    this.demoMode.waitStartTime = state.t;
+                    this.demoMode.waitDuration = this.engine.getOrbitalPeriod() * 0.9;
+                }
+            }
+        }
+    }
+    
+    snapToTargetAngle(targetAngle, rMag) {
+         this.engine.state.x = rMag * Math.cos(targetAngle);
+         this.engine.state.y = rMag * Math.sin(targetAngle);
+    }
+    
+    correctVelocityDirection(state, r) {
+        const vCurr = Math.sqrt(state.vx**2 + state.vy**2);
+        const cross = state.x * state.vy - state.y * state.vx;
+        const clockwise = cross < 0;
+        let tx, ty;
+        if (clockwise) { tx = state.y/r; ty = -state.x/r; }
+        else { tx = -state.y/r; ty = state.x/r; }
+        this.engine.setState({ ...state, vx: tx*vCurr, vy: ty*vCurr });
+    }
+
+    startHohmannTransfer(targetR) {
+        const state = this.engine.getState();
+        const r = Math.sqrt(state.x**2 + state.y**2);
+        const els = this.engine.getKeplerianElements();
+        
+        this.autoPilot.active = true;
+        this.autoPilot.targetRadius = targetR;
+        this.autoPilot.mode = targetR > els.a ? 'HIGH' : 'LOW';
+        
+        if (els.e > 0.01) {
+            this.autoPilot.phase = 'ALIGNING';
+            const targetApsis = this.autoPilot.mode === 'HIGH' ? "近地点 (Perigee)" : "远地点 (Apogee)";
+            this.els.autopilotStatus.innerText = `>>> 正在等待 ${targetApsis} 进行变轨...`;
+        } else {
+            this.autoPilot.phase = 'BURNING_1';
+            this.els.autopilotStatus.innerText = `>>> 正在启动霍曼转移 (目标 R=${targetR})`;
+        }
+        
+        if (!this.isPlaying) this.togglePlay();
+    }
+
+    processAutoPilot() {
+        if (!this.autoPilot.active) return;
+
+        const state = this.engine.getState();
+        const r = Math.sqrt(state.x**2 + state.y**2);
+        const v = Math.sqrt(state.vx**2 + state.vy**2);
+        const mu = this.engine.mu;
+        const els = this.engine.getKeplerianElements();
+
+        if (this.autoPilot.phase === 'ALIGNING') {
+            const dot = state.x * state.vx + state.y * state.vy;
+            const radialV = Math.abs(dot) / r;
+            const isTargetApsis = (this.autoPilot.mode === 'HIGH' && r < els.a) || 
+                                  (this.autoPilot.mode === 'LOW' && r > els.a);
+            
+            if (radialV < 0.05 && isTargetApsis) {
+                this.autoPilot.phase = 'BURNING_1'; 
+            }
+        }
+
+        if (this.autoPilot.phase === 'BURNING_1') {
+            const r1 = r;
+            const r2 = this.autoPilot.targetRadius;
+            const targetV = Math.sqrt(mu/r1) * Math.sqrt((2*r2)/(r1+r2));
+            const deltaV = targetV - v;
+
+            if (!this.engine.checkOrbitLimit(deltaV)) {
+                this.showFuelAlert();
+                this.autoPilot.active = false;
+                this.updateAutoPilotUI();
+                return;
+            }
+            
+            this.correctVelocityDirection(state, r);
+            const cross = state.x * state.vy - state.y * state.vx;
+            const clockwise = cross < 0;
+            let tx, ty; 
+            if (clockwise) { tx = state.y/r; ty = -state.x/r; }
+            else { tx = -state.y/r; ty = state.x/r; }
+            
+            const newVx = tx * targetV;
+            const newVy = ty * targetV;
+            this.engine.setState({ ...state, vx: newVx, vy: newVy });
+
+            this.autoPilot.phase = 'COASTING';
+            this.els.autopilotStatus.innerHTML = `阶段 2/3: 滑行中... <br>等待到达目标高度`;
+            this.updatePrediction(); 
+        }
+        else if (this.autoPilot.phase === 'COASTING') {
+            const distToTarget = Math.abs(r - this.autoPilot.targetRadius);
+            const dot = state.x * state.vx + state.y * state.vy;
+            const radialV = Math.abs(dot) / r;
+            
+            if (distToTarget < 20 && radialV < 0.05) {
+                this.autoPilot.phase = 'BURNING_2';
+            }
+        }
+        else if (this.autoPilot.phase === 'BURNING_2') {
+            const vCirc = Math.sqrt(mu / r);
+            
+            this.correctVelocityDirection(state, r);
+            const cross = state.x * state.vy - state.y * state.vx;
+            const clockwise = cross < 0;
+            let tx, ty;
+            if (clockwise) { tx = state.y / r; ty = -state.x / r; } 
+            else { tx = -state.y / r; ty = state.x / r; }
+            
+            const newVx = tx * vCirc;
+            const newVy = ty * vCirc;
+            
+            this.engine.setState({ ...state, vx: newVx, vy: newVy });
+            
+            this.autoPilot.active = false; 
+            this.els.autopilotStatus.innerText = "✅ 转移完成！轨道已圆化";
+            this.updatePrediction();
+        }
+    }
+    
+    updateAutoPilotUI() {
+        if (!this.autoPilot.active) {
+            this.els.autopilotStatus.innerText = "系统待机中...";
+        }
+    }
+
+    applyThrust(direction) {
+        if (!this.isPlaying) return; 
+        this.autoPilot.active = false; 
+        this.demoMode.active = false; 
+        this.updateAutoPilotUI();
+
+        const power = parseInt(this.els.thrustPower.value) / 50; 
+        const deltaV = direction * power;
+
+        if (!this.engine.checkOrbitLimit(deltaV)) {
+            this.showFuelAlert();
+            return;
+        }
+
+        this.engine.applyDeltaV(deltaV);
+        this.updatePrediction();
+    }
+    
+    showFuelAlert() {
+        this.els.fuelAlert.style.display = 'block';
+        setTimeout(() => {
+            this.els.fuelAlert.style.display = 'none';
+        }, 3000);
+    }
+    
+    showToast(msg, duration = 3000) {
+        this.els.teachingToast.innerText = msg;
+        this.els.teachingToast.classList.add('show');
+        setTimeout(() => {
+            this.els.teachingToast.classList.remove('show');
+        }, duration);
+    }
+
+    togglePlay() {
+        this.isPlaying = !this.isPlaying;
+        this.els.btnPlayPause.innerText = this.isPlaying ? "暂停" : "播放";
+        if (this.isPlaying) this.loop();
+    }
+
+    pause() {
+        this.isPlaying = false;
+        this.els.btnPlayPause.innerText = "播放";
+    }
+
+    resetSimulation() {
+        this.pause();
+        this.engine.reset();
+        this.history = [];
+        this.lastChartUpdateTime = 0;
+        this.recordState();
+        this.chart.data.labels = [];
+        this.chart.data.datasets[0].data = [];
+        this.chart.options.scales.x.min = 0; 
+        this.chart.options.scales.x.max = this.chartTimeWindow;
+        this.chart.update();
+        this.els.crashAlert.style.display = 'none';
+        this.els.fuelAlert.style.display = 'none';
+        this.autoPilot.active = false;
+        this.demoMode.active = false;
+        this.ghostOrbits = []; 
+        this.updateAutoPilotUI();
+        this.updatePrediction();
+        this.renderFrame(this.engine.getState(), this.orbitElements);
+        this.updateTelemetry(this.engine.getState());
+    }
+
+    recordState() {
+        this.history.push(this.engine.getState());
+    }
+
+    getSignedSpeed(state) {
+        const cross = state.x * state.vy - state.y * state.vx;
+        const sign = cross >= 0 ? 1 : -1;
+        const rawSpeed = Math.sqrt(state.vx**2 + state.vy**2);
+        return sign * (Math.round(rawSpeed * 1000) / 1000);
+    }
+
+    refreshChartData() {
+        const data = this.history.map(h => ({ 
+            x: h.t, 
+            y: this.getSignedSpeed(h)
+        }));
+        const displayData = data.filter((_, i) => i % 10 === 0 || i === data.length - 1);
+        if (this.chart) {
+            this.chart.data.labels = displayData.map(d => d.x);
+            this.chart.data.datasets[0].data = displayData;
+            
+            if (this.history.length > 0) {
+                this.updateChartWindow(this.history[this.history.length-1].t);
+                this.lastChartUpdateTime = this.history[this.history.length-1].t;
+            } else {
+                this.chart.update();
+                this.lastChartUpdateTime = 0;
+            }
+        }
+    }
+
+    updateChartWindow(currentTime) {
+        const minTime = Math.max(0, currentTime - this.chartTimeWindow);
+        const maxTime = Math.max(this.chartTimeWindow, currentTime);
+        if (this.chart) {
+            this.chart.options.scales.x.min = minTime;
+            this.chart.options.scales.x.max = maxTime;
+            this.chart.update('none'); 
+        }
+    }
+
+    collectChartData(state) {
+        const updateInterval = 2.0; 
+        if (state.t - this.lastChartUpdateTime >= updateInterval) {
+            const speed = this.getSignedSpeed(state);
+            if (this.chart) {
+                this.chart.data.datasets[0].data.push({x: state.t, y: speed});
+                
+                const minTime = Math.max(0, state.t - this.chartTimeWindow);
+                const maxTime = Math.max(this.chartTimeWindow, state.t);
+                this.chart.options.scales.x.min = minTime;
+                this.chart.options.scales.x.max = maxTime;
+            }
+            
+            this.lastChartUpdateTime = state.t;
+        }
+    }
+
+    updateChartVisuals() {
+        if (this.chart) this.chart.update('none');
+    }
+
+    updateTelemetry(state) {
+        if (!this.els.telemetry) return;
+        const r = Math.sqrt(state.x**2 + state.y**2).toFixed(3); 
+        const v = Math.sqrt(state.vx**2 + state.vy**2).toFixed(3); 
+        this.els.telemetry.innerHTML = 
+            `时间 (t): ${state.t.toFixed(1)} <br>` +
+            `高度 (r): ${r} <br>` +
+            `速度 (v): ${v}`;
+    }
+    
+    updatePrediction() {
+        if (!this.els.checkPrediction?.checked) { 
+            this.predictionPath = [];
+            this.orbitElements = {};
+            return;
+        }
+        this.orbitElements = this.engine.getKeplerianElements();
+        if (!this.orbitElements.isClosed) {
+            this.predictionPath = this.engine.predictPath(4000, 5.0); 
+        } else {
+            this.predictionPath = [];
+        }
+    }
+
+    renderFrame(state, orbitElements) {
+        const options = {
+            showVelocity: this.els.checkVelocity?.checked,
+            showGravity: this.els.checkGravity?.checked,
+            showGrid: this.els.checkGrid?.checked,
+            showPrediction: this.els.checkPrediction?.checked
+        };
+        const els = orbitElements || this.orbitElements;
+        this.renderer.draw(state, this.history, els, this.predictionPath, options, this.ghostOrbits);
+    }
+
+    loop() {
+        if (!this.isPlaying) return;
+
+        const baseSpeedUp = 15; 
+        let steps = this.speedMultiplier >= 1 ? Math.floor(this.speedMultiplier * baseSpeedUp) : Math.floor(baseSpeedUp);
+        if (this.speedMultiplier === 0.5) {
+            steps = Math.floor(baseSpeedUp * 0.5); 
+            if (steps < 1) steps = 1;
+        }
+
+        for (let i = 0; i < steps; i++) {
+            this.engine.step();
+            this.processAutoPilot(); 
+            this.processDemo(); 
+
+            if (i % 5 === 0) this.recordState();
+            
+            this.collectChartData(this.engine.getState());
+
+            if (this.engine.checkCollision()) {
+                this.pause();
+                this.els.crashAlert.style.display = 'block';
+                return; 
+            }
+        }
+
+        const currentState = this.engine.getState();
+        
+        if (this.history.length % 10 === 0) {
+            this.updatePrediction();
+        }
+
+        this.renderFrame(currentState, this.orbitElements);
+        this.updateTelemetry(currentState);
+        this.updateChartVisuals();
+
+        requestAnimationFrame(() => this.loop());
+    }
+}
+
+window.onload = () => {
+    const app = new UIController();
+};
+</script>
+</body>
+</html>

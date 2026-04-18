@@ -1,0 +1,491 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { 
+  UploadCloud, Send, FileText, CheckCircle2, Circle, RefreshCw, 
+  Play, Pause, Settings, MessageSquare, Download, ChevronRight, 
+  AlertCircle, Edit3, Loader2, Maximize2
+} from 'lucide-react';
+
+// --- 模拟数据与常量 ---
+const STAGES = [
+  { id: 1, title: '需求理解与澄清', desc: '解析输入，确定受众与场景' },
+  { id: 2, title: '问题解析与物理建模', desc: '抽取核心知识点，建立物理模型方程' },
+  { id: 3, title: '教学转化与设计', desc: '推断学习难点，生成教学指导与观察点' },
+  { id: 4, title: '交互编译与代码生成', desc: '渲染场景，绑定参数与多表征图表' }
+];
+
+const MOCK_ARTIFACTS = {
+  1: { title: '需求摘要', content: '使用场景：课堂讲授\n受众：高中生\n重点：动态受力分析与运动学图像关联。' },
+  2: { title: '物理模型 (Spec)', content: '核心：牛顿第二定律、滑动摩擦力。\n变量：质量 m, 倾角 θ, 动摩擦因数 μ。\n约束：μ < tan(θ) 时加速下滑。' },
+  3: { title: '教学指导', content: '难点：学生常误以为摩擦力与速度有关。\n观察点：调整 θ 观察临界状态；对比 v-t 图像斜率。' }
+};
+
+export default function App() {
+  const [currentView, setCurrentView] = useState('input');
+  const [problemText, setProblemText] = useState('一辆质量为 m 的木块从倾角为 θ 的粗糙斜面顶端由静止开始滑下。请探究木块下滑的加速度与倾角、动摩擦因数之间的关系，并展示速度-时间图像。');
+  
+  return (
+    <div className="min-h-screen bg-slate-50 text-slate-800 font-sans selection:bg-indigo-100 selection:text-indigo-900">
+      <header className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between sticky top-0 z-10">
+        <div className="flex items-center space-x-2">
+          <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-bold text-xl">
+            S
+          </div>
+          <h1 className="text-xl font-bold text-slate-800 tracking-tight">SimuCraft <span className="text-sm font-medium text-slate-500 ml-2 border-l border-slate-300 pl-2">Problem to Simulation</span></h1>
+        </div>
+        <div className="flex items-center space-x-4 text-sm text-slate-500">
+          <span className="hover:text-indigo-600 cursor-pointer transition-colors">历史记录</span>
+          <span className="hover:text-indigo-600 cursor-pointer transition-colors">组件库</span>
+          <div className="w-8 h-8 bg-slate-200 rounded-full flex items-center justify-center border border-slate-300">
+            T
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-7xl mx-auto p-6 h-[calc(100vh-73px)]">
+        {currentView === 'input' && (
+          <InputView 
+            problemText={problemText} 
+            setProblemText={setProblemText}
+            onGenerate={() => setCurrentView('progress')} 
+          />
+        )}
+        {currentView === 'progress' && (
+          <ProgressView 
+            onComplete={() => setCurrentView('result')} 
+          />
+        )}
+        {currentView === 'result' && (
+          <ResultView 
+            onBack={() => setCurrentView('input')} 
+          />
+        )}
+      </main>
+    </div>
+  );
+}
+
+// ==========================================
+// 1. 任务发起页 (Input View)
+// ==========================================
+function InputView({ problemText, setProblemText, onGenerate }) {
+  const [showClarify, setShowClarify] = useState(false);
+
+  return (
+    <div className="h-full flex flex-col items-center justify-center animate-in fade-in duration-500">
+      <div className="text-center mb-8">
+        <h2 className="text-3xl font-bold text-slate-800 mb-3">一键生成互动物理课堂</h2>
+        <p className="text-slate-500 max-w-xl mx-auto">输入物理题目描述或上传课件，系统将自动解析物理模型、生成教学提示，并构建可交互的模拟环境。</p>
+      </div>
+
+      <div className="w-full max-w-3xl bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden transition-all">
+        <div className="p-1">
+          <textarea
+            value={problemText}
+            onChange={(e) => setProblemText(e.target.value)}
+            placeholder="输入题目描述、教学目标，或直接粘贴公式..."
+            className="w-full h-40 p-5 text-base text-slate-700 bg-transparent resize-none focus:outline-none focus:ring-0 placeholder:text-slate-400"
+          />
+        </div>
+
+        <div className="px-5 py-3 border-t border-slate-100 flex items-center justify-between bg-slate-50/50">
+          <div className="flex space-x-4 items-center">
+            <button className="flex items-center space-x-1.5 text-sm text-slate-600 hover:text-indigo-600 px-3 py-1.5 rounded-md hover:bg-indigo-50 transition-colors">
+              <UploadCloud size={18} />
+              <span>上传题图 / PDF</span>
+            </button>
+            <div className="h-4 w-px bg-slate-300"></div>
+            <select className="bg-transparent text-sm text-slate-600 font-medium focus:outline-none cursor-pointer">
+              <option>🎓 课堂讲授模式</option>
+              <option>🧑‍💻 学生自学探究</option>
+              <option>📝 课后作业练习</option>
+            </select>
+            <label className="flex items-center space-x-2 text-sm text-slate-600 cursor-pointer">
+              <input type="checkbox" defaultChecked className="rounded text-indigo-600 focus:ring-indigo-500" />
+              <span>启用图表联动</span>
+            </label>
+          </div>
+        </div>
+
+        <div className="p-5 flex items-center justify-between border-t border-slate-100">
+          <button 
+            onClick={() => setShowClarify(true)}
+            className="flex items-center space-x-2 text-slate-500 hover:text-indigo-600 transition-colors text-sm font-medium"
+          >
+            <MessageSquare size={18} />
+            <span>AI 需求澄清</span>
+          </button>
+          
+          <button 
+            onClick={onGenerate}
+            className="flex items-center space-x-2 bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2.5 rounded-lg shadow-sm shadow-indigo-200 transition-all active:scale-95 font-medium"
+          >
+            <span>生成模拟</span>
+            <Send size={16} className="ml-1" />
+          </button>
+        </div>
+      </div>
+
+      {showClarify && (
+        <div className="fixed inset-0 bg-slate-900/20 backdrop-blur-sm flex items-center justify-center z-50 animate-in fade-in">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col">
+            <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+              <h3 className="font-semibold text-slate-800 flex items-center"><AlertCircle size={18} className="text-amber-500 mr-2"/> 需求细节澄清</h3>
+              <button onClick={() => setShowClarify(false)} className="text-slate-400 hover:text-slate-600">&times;</button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="flex space-x-3">
+                <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center shrink-0">AI</div>
+                <div className="bg-slate-100 rounded-lg p-3 text-sm text-slate-700 rounded-tl-none">
+                  我注意到您提到了“探究加速度与倾角的关系”。为了提供更好的体验，请问：<br/>
+                  1. 是否需要提供“临界摩擦角”的视觉提示？<br/>
+                  2. 模拟中是否需要显示受力分析的矢量箭头？
+                </div>
+              </div>
+              <div className="flex space-x-3 flex-row-reverse">
+                <div className="w-8 h-8 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center shrink-0 ml-3">T</div>
+                <div className="bg-indigo-600 text-white rounded-lg p-3 text-sm rounded-tr-none">
+                  是的，需要受力矢量箭头，并且箭头长度要随参数实时变化。
+                </div>
+              </div>
+            </div>
+            <div className="p-4 border-t border-slate-100 bg-slate-50">
+              <div className="flex space-x-2">
+                <input type="text" placeholder="回复 AI..." className="flex-1 border border-slate-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500" />
+                <button className="bg-slate-800 text-white px-4 py-2 rounded-md text-sm">发送</button>
+              </div>
+              <button onClick={() => {setShowClarify(false); onGenerate();}} className="w-full mt-3 text-indigo-600 text-sm font-medium hover:underline">
+                确认需求并开始生成 →
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ==========================================
+// 2. 生成进度页 (Progress View)
+// ==========================================
+function ProgressView({ onComplete }) {
+  const [currentStep, setCurrentStep] = useState(1);
+
+  useEffect(() => {
+    let timer;
+    if (currentStep < 5) {
+      timer = setTimeout(() => {
+        setCurrentStep(prev => prev + 1);
+      }, 2500);
+    } else {
+      setTimeout(onComplete, 1000);
+    }
+    return () => clearTimeout(timer);
+  }, [currentStep, onComplete]);
+
+  return (
+    <div className="h-full flex flex-col items-center justify-center max-w-4xl mx-auto animate-in fade-in duration-500">
+      <h2 className="text-2xl font-bold text-slate-800 mb-10 flex items-center">
+        <Loader2 className="animate-spin text-indigo-600 mr-3" size={28} />
+        正在构建模拟环境...
+      </h2>
+
+      <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-10">
+        <div className="space-y-6">
+          {STAGES.map((stage) => {
+            const isCompleted = currentStep > stage.id;
+            const isCurrent = currentStep === stage.id;
+            const isPending = currentStep < stage.id;
+
+            return (
+              <div key={stage.id} className={`flex ${isPending ? 'opacity-40' : 'opacity-100'} transition-opacity duration-500`}>
+                <div className="flex flex-col items-center mr-4">
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center border-2 ${
+                    isCompleted ? 'bg-emerald-500 border-emerald-500 text-white' : 
+                    isCurrent ? 'border-indigo-600 text-indigo-600 bg-indigo-50' : 
+                    'border-slate-300 text-slate-400'
+                  }`}>
+                    {isCompleted ? <CheckCircle2 size={18} /> : stage.id}
+                  </div>
+                  {stage.id !== STAGES.length && (
+                    <div className={`w-0.5 h-10 mt-2 ${isCompleted ? 'bg-emerald-500' : 'bg-slate-200'}`}></div>
+                  )}
+                </div>
+                <div className="pt-1">
+                  <h4 className={`text-base font-semibold ${isCurrent ? 'text-indigo-700' : 'text-slate-700'}`}>
+                    {stage.title}
+                  </h4>
+                  <p className="text-sm text-slate-500 mt-1">{stage.desc}</p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="bg-slate-100/50 rounded-2xl border border-slate-200 p-6 relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 opacity-20"></div>
+          <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-4 flex items-center">
+            <FileText size={16} className="mr-2" />
+            中间工件 (Artifacts) 提取中
+          </h3>
+          
+          <div className="space-y-4">
+            {Object.entries(MOCK_ARTIFACTS).map(([key, artifact]) => {
+              const stageId = parseInt(key);
+              if (currentStep <= stageId) return null;
+
+              return (
+                <div key={key} className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 animate-in slide-in-from-right-4 fade-in duration-500">
+                  <h4 className="text-sm font-semibold text-indigo-700 mb-2">{artifact.title}</h4>
+                  <pre className="text-xs text-slate-600 whitespace-pre-wrap font-sans leading-relaxed">
+                    {artifact.content}
+                  </pre>
+                </div>
+              );
+            })}
+            
+            {currentStep <= 4 && (
+              <div className="flex items-center space-x-2 text-sm text-slate-400 mt-4 animate-pulse">
+                <Loader2 size={14} className="animate-spin" />
+                <span>正在分析 {STAGES[currentStep - 1]?.title}...</span>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ==========================================
+// 3. 模拟运行页 (Result View)
+// ==========================================
+function ResultView({ onBack }) {
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  
+  const [angle, setAngle] = useState(30);
+  const [friction, setFriction] = useState(0.2);
+  const [mass, setMass] = useState(1);
+  const [time, setTime] = useState(0);
+
+  const animationRef = useRef(null);
+  
+  useEffect(() => {
+    if (isPlaying) {
+      animationRef.current = requestAnimationFrame(updatePhysics);
+    } else {
+      cancelAnimationFrame(animationRef.current);
+    }
+    return () => cancelAnimationFrame(animationRef.current);
+  }, [isPlaying, angle, friction]);
+
+  const updatePhysics = () => {
+    setTime(t => {
+      const newT = t + 0.02;
+      if (newT > 5) {
+        setIsPlaying(false);
+        return 0; 
+      }
+      return newT;
+    });
+    if (isPlaying) {
+      animationRef.current = requestAnimationFrame(updatePhysics);
+    }
+  };
+
+  const resetSim = () => {
+    setIsPlaying(false);
+    setTime(0);
+  };
+
+  const thetaRad = (angle * Math.PI) / 180;
+  const g = 9.8;
+  const acceleration = g * (Math.sin(thetaRad) - friction * Math.cos(thetaRad));
+  const effectiveAcc = Math.max(0, acceleration);
+  const distance = 0.5 * effectiveAcc * time * time * 20;
+  
+  const chartData = Array.from({ length: 20 }).map((_, i) => {
+    const t = i * 0.25;
+    const v = effectiveAcc * Math.min(t, time);
+    return v;
+  });
+
+  return (
+    <div className="h-full flex flex-col animate-in fade-in duration-500">
+      <div className="flex justify-between items-center mb-4">
+        <button onClick={onBack} className="text-slate-500 hover:text-slate-800 text-sm flex items-center">
+          &larr; 返回编辑
+        </button>
+        <div className="flex space-x-3">
+          <button onClick={() => setShowSettings(!showSettings)} className="flex items-center space-x-1.5 px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50">
+            <Edit3 size={16} />
+            <span>修改模式</span>
+          </button>
+          <button className="flex items-center space-x-1.5 px-3 py-1.5 bg-indigo-50 text-indigo-700 border border-indigo-100 rounded-lg text-sm font-medium hover:bg-indigo-100">
+            <Download size={16} />
+            <span>导出包 (ZIP)</span>
+          </button>
+        </div>
+      </div>
+
+      <div className="flex-1 flex gap-6 min-h-0">
+        <div className="flex-1 flex flex-col gap-4">
+          <div className="flex-1 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden relative flex flex-col">
+            <div className="absolute top-4 left-4 bg-white/80 backdrop-blur-sm px-3 py-1.5 rounded-md border border-slate-100 text-xs font-semibold text-slate-600 z-10 flex items-center shadow-sm">
+              <Maximize2 size={14} className="mr-2"/> 互动视图
+            </div>
+            
+            <div className="flex-1 bg-slate-50 relative overflow-hidden flex items-center justify-center">
+              <div className="relative w-[500px] h-[300px] border-b-2 border-slate-300">
+                <div 
+                  className="absolute bottom-0 left-0 bg-slate-200 origin-bottom-left border-t-2 border-slate-400"
+                  style={{ 
+                    width: '400px', 
+                    height: '200px',
+                    clipPath: 'polygon(0 100%, 100% 100%, 0 0)',
+                    transform: `rotate(${30 - angle}deg)`
+                  }}
+                />
+                
+                <div 
+                  className="absolute w-12 h-12 bg-indigo-500 rounded-sm shadow-md flex items-center justify-center text-white text-xs font-bold"
+                  style={{
+                    left: `${50 + distance * Math.cos(thetaRad)}px`,
+                    bottom: `${200 - distance * Math.sin(thetaRad)}px`,
+                    transform: `rotate(-${angle}deg)`,
+                    transition: isPlaying ? 'none' : 'all 0.3s ease'
+                  }}
+                >
+                  m
+                  <div className="absolute -right-10 top-1/2 h-0.5 bg-red-500 origin-left" style={{ width: effectiveAcc > 0 ? '40px' : '0px' }}>
+                     <div className="absolute right-0 -top-1 w-0 h-0 border-t-4 border-b-4 border-l-4 border-t-transparent border-b-transparent border-red-500"></div>
+                  </div>
+                </div>
+
+                <div className="absolute bottom-0 left-10 w-8 h-8 border-r-2 border-t-2 border-slate-400 rounded-tr-full"></div>
+                <div className="absolute bottom-2 left-16 text-xs font-bold text-slate-500">θ</div>
+              </div>
+            </div>
+
+            <div className="bg-white border-t border-slate-200 p-5 flex items-center gap-8">
+              <div className="flex items-center space-x-3 pr-6 border-r border-slate-200">
+                <button 
+                  onClick={() => setIsPlaying(!isPlaying)} 
+                  className="w-12 h-12 rounded-full bg-indigo-600 text-white flex items-center justify-center hover:bg-indigo-700 shadow-md shadow-indigo-200 transition-transform active:scale-95"
+                >
+                  {isPlaying ? <Pause fill="currentColor" /> : <Play fill="currentColor" className="ml-1" />}
+                </button>
+                <button 
+                  onClick={resetSim}
+                  className="w-10 h-10 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center hover:bg-slate-200 transition-colors"
+                >
+                  <RefreshCw size={18} />
+                </button>
+                <div className="text-xs font-mono text-slate-400 w-12">{time.toFixed(2)}s</div>
+              </div>
+
+              <div className="flex-1 grid grid-cols-3 gap-6">
+                <div className="space-y-2">
+                  <div className="flex justify-between text-xs font-medium text-slate-600">
+                    <span>倾角 (θ)</span>
+                    <span>{angle}°</span>
+                  </div>
+                  <input type="range" min="0" max="60" value={angle} onChange={e => setAngle(Number(e.target.value))} className="w-full accent-indigo-600" />
+                </div>
+                <div className="space-y-2">
+                  <div className="flex justify-between text-xs font-medium text-slate-600">
+                    <span>动摩擦因数 (μ)</span>
+                    <span>{friction.toFixed(2)}</span>
+                  </div>
+                  <input type="range" min="0" max="0.8" step="0.05" value={friction} onChange={e => setFriction(Number(e.target.value))} className="w-full accent-indigo-600" />
+                </div>
+                <div className="space-y-2">
+                  <div className="flex justify-between text-xs font-medium text-slate-600">
+                    <span>质量 (m)</span>
+                    <span>{mass} kg</span>
+                  </div>
+                  <input type="range" min="0.5" max="5" step="0.5" value={mass} onChange={e => setMass(Number(e.target.value))} className="w-full accent-indigo-600" />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="w-80 flex flex-col gap-4">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
+            <h3 className="text-sm font-bold text-slate-700 mb-3 flex items-center">
+              <Circle size={14} className="mr-2 text-indigo-500" /> 多表征联动 (v-t 图像)
+            </h3>
+            <div className="h-32 bg-slate-50 border border-slate-100 rounded-lg flex items-end p-2 gap-1">
+               {chartData.map((val, idx) => (
+                 <div key={idx} className="flex-1 bg-indigo-400 rounded-t-sm transition-all duration-200" style={{ height: `${Math.min(100, val * 10)}%` }}></div>
+               ))}
+            </div>
+            <div className="flex justify-between text-[10px] text-slate-400 mt-1 px-1">
+              <span>0s</span><span>t</span>
+            </div>
+          </div>
+
+          <div className="flex-1 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col overflow-hidden">
+            <div className="bg-indigo-50 border-b border-indigo-100 px-4 py-3">
+              <h3 className="text-sm font-bold text-indigo-900">教师面板 (Teacher Guide)</h3>
+            </div>
+            <div className="p-4 space-y-5 overflow-y-auto">
+              <div>
+                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">核心教学目标</h4>
+                <p className="text-sm text-slate-700 leading-relaxed">帮助学生理解斜面上物体下滑的加速度不仅与倾角有关，还受到动摩擦因数的制约。建立动态的力与运动的联系。</p>
+              </div>
+              
+              <div>
+                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">课堂观察点</h4>
+                <ul className="space-y-2">
+                  <li className="text-sm text-slate-700 flex items-start">
+                    <span className="text-indigo-500 mr-2">•</span>
+                    <span>引导学生观察：当 μ 逐渐增大时，加速度矢量（红箭头）如何变化？</span>
+                  </li>
+                  <li className="text-sm text-slate-700 flex items-start">
+                    <span className="text-indigo-500 mr-2">•</span>
+                    <span>提问：尝试调节参数，寻找让滑块匀速下滑的临界条件。</span>
+                  </li>
+                </ul>
+              </div>
+
+              <div>
+                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">潜在误概念</h4>
+                <div className="bg-amber-50 border border-amber-100 rounded-lg p-3 text-sm text-amber-800">
+                  ⚠️ 学生可能认为改变质量 m 会影响下滑加速度。可让学生在面板上调整质量 m，观察 v-t 图像是否变化，以证伪此观点。
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        {showSettings && (
+          <div className="w-64 bg-white rounded-2xl border border-slate-200 shadow-lg p-4 animate-in slide-in-from-right-8">
+            <h3 className="font-bold text-slate-800 mb-4 border-b pb-2">模拟设置</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs font-semibold text-slate-500">场景主题</label>
+                <select className="mt-1 block w-full text-sm border-slate-200 rounded-md">
+                  <option>简约白板</option>
+                  <option>黑板风格</option>
+                  <option>真实纹理</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-500">复杂级别</label>
+                <select className="mt-1 block w-full text-sm border-slate-200 rounded-md">
+                  <option>基础 (仅显示合力)</option>
+                  <option>进阶 (显示受力分解)</option>
+                </select>
+              </div>
+              <div className="pt-4 border-t border-slate-100">
+                 <button className="w-full bg-slate-800 text-white text-sm py-2 rounded-md hover:bg-slate-700">重新编译 Spec</button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

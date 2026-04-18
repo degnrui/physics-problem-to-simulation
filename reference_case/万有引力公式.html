@@ -1,0 +1,1090 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>万有引力探索实验室</title>
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg-color: #f0f2f5;
+            --panel-bg: #ffffff;
+            --primary-color: #3b82f6;
+            --text-color: #1f2937;
+            --border-color: #e5e7eb;
+            --accent-red: #ef4444;
+            --accent-gray: #64748b;
+            --line-r: #ef4444;
+            --line-M: #3b82f6;
+            --line-m: #10b981;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Modal / Dialog */
+        dialog {
+            border: none;
+            border-radius: 12px;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+            padding: 2rem;
+            max-width: 500px;
+            width: 90%;
+            background: white;
+            z-index: 1000;
+        }
+        dialog::backdrop {
+            background: rgba(0, 0, 0, 0.5);
+        }
+        .modal-title { font-size: 1.5rem; font-weight: bold; margin-bottom: 1rem; color: var(--primary-color); }
+        .modal-content { line-height: 1.6; margin-bottom: 1.5rem; }
+        .modal-btn {
+            background-color: var(--primary-color);
+            color: white;
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1rem;
+            width: 100%;
+            transition: background 0.2s;
+        }
+        .modal-btn:hover { background-color: #2563eb; }
+
+        /* Main Layout */
+        #app-container {
+            display: flex;
+            height: 100%;
+            width: 100%;
+            overflow: hidden;
+        }
+
+        /* Left Column: Visual Pane */
+        .visual-pane {
+            flex: 2; /* Takes 2/3 space */
+            display: flex;
+            flex-direction: column;
+            padding: 1rem;
+            gap: 1rem;
+            background-color: #eef2f6;
+            border-right: 1px solid var(--border-color);
+            overflow-y: auto; /* Allow scrolling if height is too small */
+            min-width: 0; 
+        }
+
+        /* Canvas Area */
+        .canvas-wrapper {
+            flex: 1; 
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            position: relative;
+            width: 100%;
+            min-height: 350px; /* Ensure minimum height */
+            flex-shrink: 0;
+            overflow: hidden;
+        }
+
+        canvas#simCanvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        /* Overlay Controls */
+        .overlay-panel {
+            position: absolute;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(4px);
+            padding: 10px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            border: 1px solid rgba(0,0,0,0.05);
+            z-index: 10;
+        }
+
+        .top-left {
+            top: 10px;
+            left: 10px;
+            width: 240px; 
+        }
+
+        .top-right {
+            top: 10px;
+            right: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            width: auto;
+        }
+
+        .bottom-center {
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 10px 25px;
+            text-align: center;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+            white-space: nowrap; 
+        }
+
+        /* Formula Styles */
+        .formula-display {
+            font-family: 'Times New Roman', serif;
+            font-style: italic;
+            font-size: 1.5rem;
+            color: #334155;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .formula-term {
+            transition: all 0.2s ease;
+            padding: 0 4px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .formula-term.active {
+            color: #ef4444;
+            font-weight: bold;
+            transform: scale(1.2);
+            background: rgba(239, 68, 68, 0.1);
+        }
+        .fraction {
+            display: inline-flex;
+            flex-direction: column;
+            align-items: center;
+            vertical-align: middle;
+            margin: 0 5px;
+        }
+        .fraction-top {
+            border-bottom: 2px solid #334155;
+            padding-bottom: 2px;
+            display: flex;
+            gap: 5px;
+        }
+        .fraction-bottom {
+            padding-top: 2px;
+        }
+
+        /* Force Bar Overlay Styles */
+        .force-bar-label {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: #475569;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        .force-val-text {
+            color: #ef4444; 
+            font-family: 'Times New Roman', serif;
+            font-size: 1.1rem;
+        }
+        .force-bar-bg {
+            width: 100%;
+            height: 12px;
+            background: #e2e8f0;
+            border-radius: 6px;
+            overflow: hidden;
+            border: 1px solid #cbd5e1;
+        }
+        .force-bar-fill {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, #10b981 0%, #f59e0b 50%, #ef4444 100%);
+            transition: width 0.1s linear;
+        }
+
+        /* Checkbox Overlay Styles */
+        .checkbox-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.9rem;
+            cursor: pointer;
+            color: #334155;
+            padding: 5px;
+        }
+        .checkbox-item input {
+            cursor: pointer;
+            accent-color: var(--primary-color);
+            transform: scale(1.2);
+        }
+
+        /* Chart Area Styles */
+        .charts-container {
+            display: flex;
+            gap: 10px;
+            width: 100%;
+            height: 250px; 
+            flex-shrink: 0; /* Prevent shrinking */
+            margin-top: 10px;
+        }
+        
+        .single-chart-wrapper {
+            background: white;
+            border-radius: 12px;
+            padding: 10px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            position: relative;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            min-width: 0;
+        }
+
+        .chart-header-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 5px;
+            padding: 0 2px;
+        }
+
+        .chart-title {
+            font-size: 0.8rem;
+            font-weight: bold;
+            color: #64748b;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .btn-record {
+            background: #f1f5f9;
+            border: 1px solid #cbd5e1;
+            color: #475569;
+            font-size: 0.75rem;
+            padding: 4px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-weight: 600;
+        }
+        .btn-record:hover { background: #e2e8f0; color: #1e293b; }
+        .btn-record.recording {
+            background: #fee2e2;
+            color: #ef4444;
+            border-color: #fecaca;
+            animation: pulse 1.5s infinite;
+        }
+        .btn-clear {
+             background: transparent;
+             border: none;
+             color: #94a3b8;
+             font-size: 0.7rem;
+             cursor: pointer;
+             margin-left: 5px;
+             text-decoration: underline;
+        }
+        .btn-clear:hover { color: #ef4444; }
+
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+            70% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+
+        .chart-canvas-container {
+            flex-grow: 1;
+            position: relative;
+            width: 100%;
+            min-height: 0;
+        }
+
+        /* Right Column: Control Pane */
+        .control-pane {
+            flex: 1; /* Takes 1/3 space */
+            min-width: 300px;
+            max-width: 400px;
+            padding: 1.5rem;
+            background: white;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+            border-left: 1px solid var(--border-color);
+        }
+
+        .control-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid var(--border-color);
+            padding-bottom: 0.5rem;
+        }
+        
+        h2 { margin: 0; font-size: 1.25rem; color: var(--text-color); }
+
+        /* Play Button in Control Pane */
+        .btn-play-control {
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: background 0.2s;
+            box-shadow: 0 2px 4px rgba(59, 130, 246, 0.3);
+            flex-shrink: 0;
+        }
+        .btn-play-control:hover { background-color: #2563eb; }
+        .btn-play-control svg { width: 20px; height: 20px; fill: currentColor; }
+        
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            background: #f8fafc;
+            padding: 1rem;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+        }
+
+        .group-title { font-weight: 600; font-size: 0.95rem; color: #4b5563; margin-bottom: 0.25rem; }
+
+        .slider-container {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .slider-header {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.9rem;
+            color: #6b7280;
+            align-items: center;
+        }
+        
+        .relation-tag {
+            font-size: 0.75rem;
+            padding: 2px 6px;
+            border-radius: 4px;
+            margin-left: 5px;
+            font-weight: bold;
+        }
+        .tag-linear { background: #dbeafe; color: #1e40af; }
+        .tag-square { background: #fee2e2; color: #991b1b; }
+        .tag-none { background: #f1f5f9; color: #64748b; }
+
+        input[type="range"] {
+            width: 100%;
+            accent-color: var(--primary-color);
+        }
+
+        /* Data Monitor (Simplified) */
+        .data-monitor {
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 1rem;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.8rem;
+        }
+        .alert-box {
+            color: #ef4444;
+            font-weight: bold;
+            display: none;
+            margin-top: 0.5rem;
+            font-size: 0.85rem;
+        }
+
+    </style>
+</head>
+<body>
+
+    <!-- Help Modal -->
+    <dialog id="help-modal">
+        <div class="modal-title">🪐 万有引力教学实验室</div>
+        <div class="modal-content">
+            <p><strong>教学任务：数据采集与规律探索</strong></p>
+            <ol>
+                <li><strong>第一步：选择对象</strong>
+                    <br>决定你要研究哪个变量：距离 $r$、中心质量 $M$ 还是卫星质量 $m$。
+                </li>
+                <li><strong>第二步：开始录制数据</strong>
+                    <br>点击对应图表右上角的 <strong>“⚪ 开始录制”</strong> 按钮。
+                </li>
+                <li><strong>第三步：采集数据</strong>
+                    <br>缓慢拖动对应的滑块。注意：<strong>只有开启“录制”的图表才会记录数据和更新显示</strong>。
+                    <br>如果不点击录制，图表将保持静止，方便对比观察。
+                </li>
+            </ol>
+        </div>
+        <button class="modal-btn" onclick="document.getElementById('help-modal').close()">开始实验</button>
+    </dialog>
+
+    <div id="app-container">
+        <!-- Left Column: Visual Area -->
+        <div class="visual-pane">
+            <!-- Canvas -->
+            <div class="canvas-wrapper" id="canvas-container">
+                <canvas id="simCanvas"></canvas>
+                
+                <!-- Top Left: Force Meter (Numeric) -->
+                <div class="overlay-panel top-left">
+                    <div class="force-bar-label">
+                        <span>引力强度 F</span>
+                        <span id="force-val-overlay" class="force-val-text">0 N</span>
+                    </div>
+                    <div class="force-bar-bg">
+                        <div class="force-bar-fill" id="force-bar-fill"></div>
+                    </div>
+                </div>
+
+                <!-- Top Right: Visual Controls -->
+                <div class="overlay-panel top-right">
+                    <label class="checkbox-item">
+                        <input type="checkbox" id="check-force" checked> 显示引力矢量
+                    </label>
+                </div>
+
+                <!-- Bottom Center: Dynamic Formula -->
+                <div class="overlay-panel bottom-center">
+                    <div class="formula-display">
+                        F = G <span class="fraction">
+                            <div class="fraction-top">
+                                <span id="term-M" class="formula-term" style="color:var(--line-M)">M</span> · <span id="term-m" class="formula-term" style="color:var(--line-m)">m</span>
+                            </div>
+                            <div class="fraction-bottom">
+                                <span id="term-r" class="formula-term" style="color:var(--line-r)">r²</span>
+                            </div>
+                        </span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Three Charts Container -->
+            <div class="charts-container">
+                <!-- Chart 1: F vs r -->
+                <div class="single-chart-wrapper">
+                    <div class="chart-header-row">
+                        <div class="chart-title" style="color:var(--line-r)">F - r (距离)</div>
+                        <div style="display:flex; align-items:center;">
+                            <button class="btn-record" id="btn-record-R" onclick="app.toggleRecord('R')">⚪ 录制</button>
+                            <button class="btn-clear" onclick="app.clearChart('R')">清空</button>
+                        </div>
+                    </div>
+                    <div class="chart-canvas-container">
+                        <canvas id="chartR"></canvas>
+                    </div>
+                </div>
+                <!-- Chart 2: F vs M -->
+                <div class="single-chart-wrapper">
+                    <div class="chart-header-row">
+                        <div class="chart-title" style="color:var(--line-M)">F - M (中心质量)</div>
+                        <div style="display:flex; align-items:center;">
+                            <button class="btn-record" id="btn-record-M" onclick="app.toggleRecord('M')">⚪ 录制</button>
+                            <button class="btn-clear" onclick="app.clearChart('M')">清空</button>
+                        </div>
+                    </div>
+                    <div class="chart-canvas-container">
+                        <canvas id="chartM"></canvas>
+                    </div>
+                </div>
+                <!-- Chart 3: F vs m -->
+                <div class="single-chart-wrapper">
+                    <div class="chart-header-row">
+                        <div class="chart-title" style="color:var(--line-m)">F - m (卫星质量)</div>
+                        <div style="display:flex; align-items:center;">
+                            <button class="btn-record" id="btn-record-m" onclick="app.toggleRecord('m')">⚪ 录制</button>
+                            <button class="btn-clear" onclick="app.clearChart('m')">清空</button>
+                        </div>
+                    </div>
+                    <div class="chart-canvas-container">
+                        <canvas id="chartm"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Column: Control Pane -->
+        <div class="control-pane">
+            <div class="control-header">
+                <h2>🏗️ 参数控制</h2>
+                <!-- Play/Pause Button Moved Here -->
+                <button class="btn-play-control" id="btn-play-pause" title="播放/暂停">
+                    <svg viewBox="0 0 24 24" id="icon-play" style="display:none"><path d="M8 5v14l11-7z"/></svg>
+                    <svg viewBox="0 0 24 24" id="icon-pause"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+                </button>
+            </div>
+
+            <!-- Group 1: Planet -->
+            <div class="control-group" style="border-left: 4px solid var(--line-M)">
+                <div class="group-title">中心天体 (行星)</div>
+                
+                <div class="slider-container">
+                    <div class="slider-header">
+                        <span style="color:var(--line-M); font-weight:bold;">质量 M <span class="relation-tag tag-linear">一次正比</span></span>
+                        <span id="val-M">5.0 × 10²⁴ kg</span>
+                    </div>
+                    <input type="range" id="slider-M" min="1" max="10" step="0.1" value="5.0">
+                </div>
+
+                <div class="slider-container">
+                    <div class="slider-header">
+                        <span>半径 R <span class="relation-tag tag-none">无影响</span></span>
+                        <span id="val-R">5000 km</span>
+                    </div>
+                    <input type="range" id="slider-R" min="2000" max="10000" step="100" value="5000">
+                </div>
+            </div>
+
+            <!-- Group 2: Satellite -->
+            <div class="control-group">
+                <div class="group-title">环绕天体 (卫星)</div>
+                
+                <div class="slider-container" style="border-left: 4px solid var(--line-m); padding-left: 8px;">
+                    <div class="slider-header">
+                        <span style="color:var(--line-m); font-weight:bold;">质量 m <span class="relation-tag tag-linear">一次正比</span></span>
+                        <span id="val-m">1000 kg</span>
+                    </div>
+                    <input type="range" id="slider-m" min="100" max="5000" step="100" value="1000">
+                </div>
+
+                <div class="slider-container" style="border-left: 4px solid var(--line-r); padding-left: 8px; margin-top:10px;">
+                    <div class="slider-header">
+                        <span style="color:var(--line-r); font-weight:bold;">轨道距离 r <span class="relation-tag tag-square">平方反比</span></span>
+                        <span id="val-r">20000 km</span>
+                    </div>
+                    <input type="range" id="slider-r" min="2000" max="80000" step="500" value="20000">
+                </div>
+                <div class="alert-box" id="collision-alert">⚠️ 警告: 卫星坠毁 (r < R)</div>
+            </div>
+
+            <!-- Group 3: Tips -->
+            <div class="data-monitor">
+                <div style="font-size: 0.9rem; color: #cbd5e1;">
+                    💡 提示：<br>
+                    <strong>如何绘制曲线？</strong><br>
+                    点击某图表的“录制”按钮，然后拖动对应的滑块。只有开启录制的图表才会更新数据。
+                </div>
+            </div>
+        </div>
+    </div>
+
+<script>
+/**
+ * 物理引擎与应用逻辑
+ */
+class GravityApp {
+    constructor() {
+        // --- 物理常数与缩放 ---
+        this.G = 6.67430e-11;
+        this.M_factor = 1e24; // Slider value * this = real mass
+        
+        // Auto-scaling parameters
+        // Max radius on slider is 80,000 km. We want to show a bit more.
+        this.maxVisibleRadius = 90000; // km
+        this.scale = 1; // Will be calculated in resizeCanvas
+        this.viewOffsetX = 0;
+        this.viewOffsetY = 0;
+
+        // --- 状态变量 ---
+        this.state = {
+            M: 5.0, // x 10^24 kg
+            R: 5000, // km
+            m: 1000, // kg
+            r: 20000, // km
+            theta: 0, // radians
+            running: true,
+            crashed: false
+        };
+
+        // --- Recording State ---
+        this.recording = {
+            R: false,
+            M: false,
+            m: false
+        };
+
+        // --- Recorded Data (XY Points) ---
+        this.recordedData = {
+            R: [],
+            M: [],
+            m: []
+        };
+
+        // --- 时间控制 (固定) ---
+        this.baseDt = 20; // simulation seconds per frame
+
+        // --- DOM Elements ---
+        this.canvas = document.getElementById('simCanvas');
+        this.ctx = this.canvas.getContext('2d');
+        
+        // Three Canvas Elements
+        this.canvasR = document.getElementById('chartR');
+        this.canvasM = document.getElementById('chartM');
+        this.canvasm = document.getElementById('chartm');
+        
+        this.ui = {
+            playBtn: document.getElementById('btn-play-pause'),
+            iconPlay: document.getElementById('icon-play'),
+            iconPause: document.getElementById('icon-pause'),
+            
+            sliderM: document.getElementById('slider-M'),
+            sliderR: document.getElementById('slider-R'),
+            sliderm: document.getElementById('slider-m'),
+            sliderr: document.getElementById('slider-r'),
+            
+            valM: document.getElementById('val-M'),
+            valR: document.getElementById('val-R'),
+            valm: document.getElementById('val-m'),
+            valr: document.getElementById('val-r'),
+            
+            alert: document.getElementById('collision-alert'),
+            checkForce: document.getElementById('check-force'),
+            
+            forceBarFill: document.getElementById('force-bar-fill'),
+            forceValOverlay: document.getElementById('force-val-overlay'),
+
+            // Formula Terms
+            termM: document.getElementById('term-M'),
+            termm: document.getElementById('term-m'),
+            termr: document.getElementById('term-r'),
+            
+            // Record Buttons
+            btnRecR: document.getElementById('btn-record-R'),
+            btnRecM: document.getElementById('btn-record-M'),
+            btnRecm: document.getElementById('btn-record-m')
+        };
+
+        this.init();
+        
+        // Expose app to global scope
+        window.app = this;
+    }
+
+    init() {
+        this.resizeCanvas();
+        window.addEventListener('resize', () => this.resizeCanvas());
+
+        this.initCharts();
+        this.bindEvents();
+        
+        // Show help modal on load
+        document.getElementById('help-modal').showModal();
+
+        // Start Loop
+        requestAnimationFrame((t) => this.loop(t));
+    }
+
+    resizeCanvas() {
+        const container = document.getElementById('canvas-container');
+        this.canvas.width = container.clientWidth;
+        this.canvas.height = container.clientHeight;
+        this.viewOffsetX = this.canvas.width / 2;
+        this.viewOffsetY = this.canvas.height / 2;
+
+        // Auto-scaling: Fit maxVisibleRadius into the smallest dimension of the canvas
+        // Canvas coordinate range: -minDim/2 to +minDim/2
+        // We want 90000 km to fit in that half-dimension.
+        const minDim = Math.min(this.canvas.width, this.canvas.height);
+        // scale = pixels / meters
+        // 90000 km = 90,000,000 m
+        this.scale = (minDim / 2) / (this.maxVisibleRadius * 1000 * 1.1); // 1.1 for margin
+    }
+
+    // Helper to create a standardized chart config
+    createChartConfig(color, xLabel, xMax) {
+        return {
+            type: 'scatter', // Use scatter for plotting individual recorded points
+            data: {
+                datasets: [
+                    // Dataset 0: Recorded Path (Connected dots)
+                    {
+                        label: 'Recorded Path',
+                        data: [], 
+                        borderColor: color,
+                        borderWidth: 2,
+                        showLine: true, // Connect points
+                        pointRadius: 0, // Hidden points on the line, just show line
+                        pointBackgroundColor: color,
+                        fill: false,
+                        tension: 0.1
+                    },
+                    // Dataset 1: Current Point Indicator
+                    {
+                        label: 'Current',
+                        data: [], 
+                        backgroundColor: '#1f2937',
+                        borderColor: '#1f2937',
+                        pointRadius: 3, // Smaller point
+                        pointHoverRadius: 5,
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: { duration: 0 }, 
+                scales: {
+                    x: { 
+                        type: 'linear', 
+                        position: 'bottom', 
+                        title: { display: true, text: xLabel, font: {size: 10} },
+                        ticks: { font: {size: 9} },
+                        min: 0,
+                        max: xMax // Fixed max to keep context stable
+                    },
+                    y: { 
+                        min: 0,
+                        display: false, // Hide Y axis for cleaner look side-by-side
+                        grid: { display: false }
+                    }
+                },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: { enabled: false }
+                }
+            }
+        };
+    }
+
+    initCharts() {
+        // Chart R (F vs r): r goes up to 80000
+        const configR = this.createChartConfig('#ef4444', 'r (km)', 85000);
+        this.chartR = new Chart(this.canvasR, configR);
+
+        // Chart M (F vs M): M goes up to 10
+        const configM = this.createChartConfig('#3b82f6', 'M (10²⁴ kg)', 10.5);
+        this.chartM = new Chart(this.canvasM, configM);
+
+        // Chart m (F vs m): m goes up to 5000
+        const configm = this.createChartConfig('#10b981', 'm (kg)', 5200);
+        this.chartm = new Chart(this.canvasm, configm);
+        
+        // Initial empty update
+        this.updateCharts(null); 
+    }
+
+    // --- Recording Control ---
+    toggleRecord(type) {
+        // Enforce mutual exclusivity - optional but helps "focus"
+        // If turning ON 'type', turn OFF others
+        if (!this.recording[type]) {
+            if (type !== 'R') this.setRecording('R', false);
+            if (type !== 'M') this.setRecording('M', false);
+            if (type !== 'm') this.setRecording('m', false);
+        }
+
+        this.setRecording(type, !this.recording[type]);
+    }
+
+    setRecording(type, isActive) {
+        this.recording[type] = isActive;
+        
+        let btn;
+        if (type === 'R') btn = this.ui.btnRecR;
+        if (type === 'M') btn = this.ui.btnRecM;
+        if (type === 'm') btn = this.ui.btnRecm;
+
+        if (isActive) {
+            btn.textContent = "🔴 录制中...";
+            btn.classList.add('recording');
+        } else {
+            btn.textContent = "⚪ 开始录制";
+            btn.classList.remove('recording');
+        }
+    }
+
+    clearChart(type) {
+        this.recordedData[type] = []; // Clear data store
+        
+        // Find the chart instance
+        let chart;
+        if (type === 'R') chart = this.chartR;
+        if (type === 'M') chart = this.chartM;
+        if (type === 'm') chart = this.chartm;
+        
+        // Directly update the chart visual to be empty
+        // This is needed because updateCharts won't run when recording is OFF
+        if (chart) {
+            chart.data.datasets[0].data = [];
+            chart.data.datasets[1].data = []; // Clear current point indicator
+            chart.update();
+        }
+    }
+
+    recordDataPoint(val, f, type) {
+        const arr = this.recordedData[type];
+        if (arr.length > 0) {
+            const last = arr[arr.length - 1];
+            if (last.x === val && last.y === f) return;
+        }
+        
+        arr.push({x: val, y: f});
+        arr.sort((a, b) => a.x - b.x);
+    }
+
+    // --- UPDATED: Only update specific chart based on active source ---
+    updateCharts(activeSource) {
+        const currentF = this.calculateForce(this.state);
+
+        // Helper to update one chart
+        const updateSingle = (chart, dataPoints, currX, currY) => {
+            chart.data.datasets[0].data = dataPoints; // The recorded path
+            chart.data.datasets[1].data = [{x: currX, y: currY}]; // Current point indicator
+            chart.update('none');
+        };
+
+        // 1. Chart R (Update only if 'r' is active AND recording R is ON)
+        if ((activeSource === 'r' || activeSource === 'R') && this.recording.R) {
+            updateSingle(this.chartR, this.recordedData.R, this.state.r, currentF);
+        }
+
+        // 2. Chart M (Update only if 'M' is active AND recording M is ON)
+        if ((activeSource === 'M') && this.recording.M) {
+            updateSingle(this.chartM, this.recordedData.M, this.state.M, currentF);
+        }
+
+        // 3. Chart m (Update only if 'm' is active AND recording m is ON)
+        if ((activeSource === 'm') && this.recording.m) {
+            updateSingle(this.chartm, this.recordedData.m, this.state.m, currentF);
+        }
+    }
+
+    // Helper to highlight formula
+    highlightTerm(element) {
+        // Reset all
+        this.ui.termM.classList.remove('active');
+        this.ui.termm.classList.remove('active');
+        this.ui.termr.classList.remove('active');
+        
+        // Activate current
+        if (element) {
+            element.classList.add('active');
+            // Auto remove after 1s
+            clearTimeout(this.highlightTimeout);
+            this.highlightTimeout = setTimeout(() => {
+                element.classList.remove('active');
+            }, 1000);
+        }
+    }
+
+    // Helper: Standard Scientific Notation
+    formatSci(num) {
+        if (num === 0) return "0";
+        const exponent = Math.floor(Math.log10(num));
+        const mantissa = num / Math.pow(10, exponent);
+        return `${mantissa.toFixed(2)} × 10<sup>${exponent}</sup>`;
+    }
+
+    bindEvents() {
+        const updateState = (source) => {
+            this.state.M = parseFloat(this.ui.sliderM.value);
+            this.state.R = parseFloat(this.ui.sliderR.value);
+            this.state.m = parseFloat(this.ui.sliderm.value);
+            this.state.r = parseFloat(this.ui.sliderr.value);
+
+            // Update Labels
+            this.ui.valM.innerHTML = `${this.state.M.toFixed(1)} × 10<sup>24</sup> kg`;
+            this.ui.valR.textContent = `${this.state.R} km`;
+            this.ui.valm.textContent = `${this.state.m} kg`;
+            this.ui.valr.textContent = `${this.state.r} km`;
+
+            // Check Collision
+            if (this.state.r < this.state.R) {
+                this.state.crashed = true;
+                this.state.running = false;
+                this.updatePlayBtnUI();
+                this.ui.alert.style.display = 'block';
+            } else {
+                this.state.crashed = false;
+                this.ui.alert.style.display = 'none';
+            }
+
+            // Formula Highlighting
+            if (source === 'M') this.highlightTerm(this.ui.termM);
+            if (source === 'm') this.highlightTerm(this.ui.termm);
+            if (source === 'r') this.highlightTerm(this.ui.termr);
+            
+            // --- RECORDING LOGIC ---
+            const F = this.calculateForce(this.state);
+            
+            // Check if recording is ON for this specific source
+            // Note: Slider 'r' maps to record type 'R'
+            const recordType = (source === 'r') ? 'R' : source; 
+
+            if (this.recording[recordType]) {
+                this.recordDataPoint(
+                    (recordType === 'R' ? this.state.r : (recordType === 'M' ? this.state.M : this.state.m)), 
+                    F, 
+                    recordType
+                );
+            }
+
+            // --- CRITICAL CHANGE: Only pass the ACTIVE source to updateCharts ---
+            // This ensures other charts do not update/move their points
+            this.updateCharts(source);
+        };
+
+        // Pass the source variable name to updateState
+        this.ui.sliderM.oninput = () => updateState('M');
+        this.ui.sliderR.oninput = () => updateState('R'); 
+        this.ui.sliderm.oninput = () => updateState('m');
+        this.ui.sliderr.oninput = () => updateState('r');
+
+        this.ui.playBtn.onclick = () => {
+            if (this.state.crashed) return;
+            this.state.running = !this.state.running;
+            this.updatePlayBtnUI();
+        };
+    }
+
+    updatePlayBtnUI() {
+        if (this.state.running) {
+            this.ui.iconPlay.style.display = 'none';
+            this.ui.iconPause.style.display = 'block';
+        } else {
+            this.ui.iconPlay.style.display = 'block';
+            this.ui.iconPause.style.display = 'none';
+        }
+    }
+
+    calculateForce(stateObj) {
+        const M_kg = stateObj.M * this.M_factor;
+        const r_m = stateObj.r * 1000;
+        return (this.G * M_kg * stateObj.m) / (r_m * r_m);
+    }
+
+    calculateOmega(stateObj) {
+        const M_kg = stateObj.M * this.M_factor;
+        const r_m = stateObj.r * 1000;
+        return Math.sqrt((this.G * M_kg) / Math.pow(r_m, 3));
+    }
+
+    loop() {
+        if (this.state.running && !this.state.crashed) {
+            const dt = this.baseDt;
+            // Physics Update
+            const omega = this.calculateOmega(this.state);
+            this.state.theta += omega * dt;
+        }
+
+        this.draw();
+        // Chart update is event-driven for performance and logic isolation
+        this.updateDataPanel();
+
+        requestAnimationFrame(() => this.loop());
+    }
+
+    draw() {
+        const ctx = this.ctx;
+        const w = this.canvas.width;
+        const h = this.canvas.height;
+        const cx = this.viewOffsetX;
+        const cy = this.viewOffsetY;
+
+        ctx.clearRect(0, 0, w, h);
+
+        this.drawSystem(ctx, this.state, cx, cy);
+    }
+
+    drawSystem(ctx, s, cx, cy) {
+        const R_px = (s.R * 1000) * this.scale;
+        const r_px = (s.r * 1000) * this.scale;
+        const colorMain = '#cbd5e1'; 
+        const colorSat = '#ef4444';
+
+        // Orbit
+        ctx.beginPath();
+        ctx.arc(cx, cy, r_px, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(59, 130, 246, 0.2)`;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        // Planet
+        ctx.beginPath();
+        ctx.arc(cx, cy, R_px, 0, Math.PI * 2);
+        ctx.fillStyle = colorMain;
+        ctx.fill();
+
+        // Satellite
+        const satX = cx + Math.cos(s.theta) * r_px;
+        const satY = cy + Math.sin(s.theta) * r_px;
+        const satRad = 5 + (s.m / 5000) * 5; 
+
+        ctx.beginPath();
+        ctx.arc(satX, satY, satRad, 0, Math.PI * 2);
+        ctx.fillStyle = colorSat;
+        ctx.fill();
+
+        // Vectors
+        if (this.ui.checkForce.checked) {
+            const F = this.calculateForce(s);
+            const scaleF = 60 / 834; 
+            let len = F * scaleF;
+            if (len > 250) len = 250;
+            if (len < 15) len = 15;
+
+            const arrowAngle = s.theta + Math.PI;
+            this.drawArrow(ctx, satX, satY, len, arrowAngle, '#ef4444', 4);
+        }
+    }
+
+    drawArrow(ctx, x, y, length, angle, color, width) {
+        const headLen = 10;
+        const endX = x + Math.cos(angle) * length;
+        const endY = y + Math.sin(angle) * length;
+
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(endX, endY);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = width;
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(endX, endY);
+        ctx.lineTo(endX - headLen * Math.cos(angle - Math.PI / 6), endY - headLen * Math.sin(angle - Math.PI / 6));
+        ctx.lineTo(endX - headLen * Math.cos(angle + Math.PI / 6), endY - headLen * Math.sin(angle + Math.PI / 6));
+        ctx.fillStyle = color;
+        ctx.fill();
+    }
+
+    updateDataPanel() {
+        const F = this.calculateForce(this.state);
+        // Force Text in Overlay with Scientific Notation
+        this.ui.forceValOverlay.innerHTML = `${this.formatSci(F)} N`;
+
+        // Update Force Bar Logic
+        const maxBarForce = 10000; 
+        let percent = (F / maxBarForce) * 100;
+        if (percent > 100) percent = 100;
+        
+        this.ui.forceBarFill.style.width = `${percent}%`;
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const app = new GravityApp();
+});
+</script>
+</body>
+</html>

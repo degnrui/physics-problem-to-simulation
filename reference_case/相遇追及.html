@@ -1,0 +1,824 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>卫星追及问题 - 交互式物理仿真</title>
+    <style>
+        :root {
+            --bg-color: #f1f5f9;
+            --panel-bg: #ffffff;
+            --text-primary: #1e293b;
+            --text-secondary: #64748b;
+            --accent-color: #3b82f6;
+            --accent-hover: #2563eb;
+            --border-color: #e2e8f0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            margin: 0;
+            height: 100vh;
+            width: 100vw;
+            overflow: hidden;
+        }
+
+        /* 主容器：Flex 布局，左大右小 */
+        .main-container {
+            display: flex;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* --- 左侧：可视化区域 (Canvas + Chart) --- */
+        .visual-area {
+            flex: 3; /* 占据 75% 宽度 */
+            display: flex;
+            flex-direction: column;
+            background: #0f172a; /* 深空背景 */
+            position: relative;
+            border-right: 1px solid var(--border-color);
+        }
+
+        /* 动画画布容器 */
+        .canvas-wrapper {
+            flex: 2; /* 占左侧高度的 2/3 */
+            position: relative;
+            overflow: hidden;
+            width: 100%;
+        }
+
+        canvas#simCanvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* 悬浮的可视化选项 (右上角) */
+        .viz-options-overlay {
+            position: absolute;
+            top: 16px;
+            right: 16px;
+            background: rgba(30, 41, 59, 0.85); /* 深色半透明 */
+            backdrop-filter: blur(4px);
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid rgba(255,255,255,0.1);
+            color: white;
+            z-index: 10;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+        }
+
+        .overlay-title {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            color: #94a3b8;
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+
+        .viz-checkbox {
+            display: flex;
+            align-items: center;
+            font-size: 0.85rem;
+            margin-bottom: 6px;
+            cursor: pointer;
+            user-select: none;
+        }
+        .viz-checkbox:last-child { margin-bottom: 0; }
+        .viz-checkbox input { margin-right: 8px; accent-color: var(--accent-color); cursor: pointer; }
+
+        /* 左侧左上角信息 */
+        .info-overlay {
+            position: absolute;
+            top: 16px;
+            left: 16px;
+            background: rgba(0,0,0,0.4);
+            padding: 8px 12px;
+            border-radius: 6px;
+            color: rgba(255,255,255,0.8);
+            font-size: 0.85rem;
+            pointer-events: none;
+            line-height: 1.5;
+        }
+
+        /* 底部图表区域 */
+        .chart-wrapper {
+            flex: 1; /* 占左侧高度的 1/3 */
+            background: white;
+            position: relative;
+            width: 100%;
+            border-top: 1px solid #334155;
+        }
+        
+        canvas#chartCanvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* --- 右侧：控制区域 --- */
+        .controls-area {
+            flex: 1; /* 占据 25% 宽度 */
+            min-width: 300px;
+            max-width: 400px;
+            background: var(--panel-bg);
+            display: flex;
+            flex-direction: column;
+            padding: 24px;
+            gap: 24px;
+            overflow-y: auto;
+            box-shadow: -2px 0 10px rgba(0,0,0,0.05);
+            z-index: 20;
+        }
+
+        /* 通用标题样式 */
+        h1 { font-size: 1.25rem; margin: 0 0 4px 0; color: var(--text-primary); }
+        .subtitle { font-size: 0.85rem; color: var(--text-secondary); line-height: 1.4; margin-bottom: 12px; }
+        
+        .panel-section {
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 16px;
+            background: #f8fafc;
+        }
+        
+        .section-header {
+            font-size: 0.8rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+            margin-bottom: 12px;
+            letter-spacing: 0.05em;
+        }
+
+        /* 参数滑块 */
+        .control-group { margin-bottom: 16px; }
+        .control-group:last-child { margin-bottom: 0; }
+        
+        .slider-header {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.9rem;
+            margin-bottom: 6px;
+            font-weight: 500;
+        }
+        
+        input[type="range"] {
+            width: 100%;
+            cursor: pointer;
+            accent-color: var(--accent-color);
+        }
+
+        /* 数据面板 */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+        .stat-box {
+            background: white;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 10px;
+            text-align: center;
+        }
+        .stat-box.highlight {
+            border-color: #bfdbfe;
+            background: #eff6ff;
+        }
+        .stat-label { font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 4px; }
+        .stat-value { font-size: 1.1rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+        /* 播放控制 */
+        .btn-row { display: flex; gap: 10px; margin-bottom: 12px; }
+        .btn {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            border-radius: 6px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-primary { background: var(--accent-color); color: white; }
+        .btn-primary:hover { background: var(--accent-hover); }
+        .btn-secondary { background: white; border: 1px solid var(--border-color); color: var(--text-primary); }
+        .btn-secondary:hover { background: #f1f5f9; }
+
+        .speed-control {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: white;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 4px;
+        }
+        .speed-opt {
+            flex: 1;
+            text-align: center;
+            font-size: 0.8rem;
+            padding: 4px 0;
+            cursor: pointer;
+            border-radius: 4px;
+            color: var(--text-secondary);
+        }
+        .speed-opt.active {
+            background: var(--accent-color);
+            color: white;
+            font-weight: 600;
+        }
+
+        /* 历史回溯 */
+        .scrubber-section {
+            margin-top: auto; /* 推到底部 */
+            background: #fff;
+            border: 1px solid var(--accent-color);
+        }
+        .scrubber-label {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 6px;
+            color: var(--accent-color);
+            font-size: 0.85rem;
+            margin-bottom: 8px;
+        }
+
+        /* 响应式调整 */
+        @media (max-width: 900px) {
+            .main-container { flex-direction: column; overflow-y: auto; }
+            .visual-area { height: 60vh; width: 100%; flex: none; }
+            .controls-area { width: 100%; flex: none; box-sizing: border-box; min-height: 50vh; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="main-container">
+    <!-- LEFT: Visuals -->
+    <div class="visual-area">
+        <!-- Top: Animation -->
+        <div class="canvas-wrapper" id="simContainer">
+            <canvas id="simCanvas"></canvas>
+            
+            <!-- Visualization Options (Top-Right Overlay) -->
+            <div class="viz-options-overlay">
+                <div class="overlay-title">可视化选项</div>
+                <label class="viz-checkbox">
+                    <input type="checkbox" id="checkOrbits" checked> 显示轨道
+                </label>
+                <label class="viz-checkbox">
+                    <input type="checkbox" id="checkRadar" checked> 显示连线 (雷达)
+                </label>
+                <label class="viz-checkbox">
+                    <input type="checkbox" id="checkSector" checked> 显示角度差 (Δθ)
+                </label>
+            </div>
+
+            <!-- Physics Info (Top-Left Overlay) -->
+            <div class="info-overlay">
+                <div>T(内) = <span id="disp-t1">1.00</span> 年</div>
+                <div>T(外) = <span id="disp-t2">1.90</span> 年</div>
+            </div>
+
+            <!-- Pause Notification -->
+            <div id="pauseOverlay" style="display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(59, 130, 246, 0.9); color: white; padding: 12px 24px; border-radius: 30px; font-weight: bold; pointer-events: none; box-shadow: 0 10px 25px rgba(0,0,0,0.3);">
+                ✨ 追及完成 (ΔN = 1)
+            </div>
+        </div>
+
+        <!-- Bottom: Chart -->
+        <div class="chart-wrapper" id="chartContainer">
+            <canvas id="chartCanvas"></canvas>
+            <div style="position: absolute; top: 8px; left: 12px; font-size: 0.75rem; color: #64748b; pointer-events: none;">
+                图表：两星圈数差 ΔN 随时间的变化 (斜率 = 相对角速度)
+            </div>
+        </div>
+    </div>
+
+    <!-- RIGHT: Controls -->
+    <div class="controls-area">
+        <div>
+            <h1>卫星追及仿真</h1>
+            <p class="subtitle">调整右侧参数，直观观察角速度差如何导致相遇。</p>
+        </div>
+
+        <!-- Section 1: Parameters -->
+        <div class="panel-section">
+            <div class="section-header">运动周期设置</div>
+            <div class="control-group">
+                <div class="slider-header">
+                    <span>内圈周期 (蓝色)</span>
+                    <span id="lbl-t1" style="color: var(--accent-color);">1.00 年</span>
+                </div>
+                <input type="range" id="inputT1" min="0.5" max="3.0" step="0.05" value="1.0">
+            </div>
+            <div class="control-group">
+                <div class="slider-header">
+                    <span>外圈周期 (红色)</span>
+                    <span id="lbl-t2" style="color: #ef4444;">1.90 年</span>
+                </div>
+                <input type="range" id="inputT2" min="1.0" max="5.0" step="0.05" value="1.9">
+            </div>
+            <div style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 8px;">
+                * 拖动滑块松手后，仿真将自动重置。
+            </div>
+        </div>
+
+        <!-- Section 2: Data -->
+        <div class="panel-section">
+            <div class="section-header">实时状态</div>
+            <div class="stats-grid">
+                <div class="stat-box">
+                    <div class="stat-label">运行时间 (年)</div>
+                    <div class="stat-value" id="val-time">0.00</div>
+                </div>
+                <div class="stat-box highlight">
+                    <div class="stat-label">圈数差 (ΔN)</div>
+                    <div class="stat-value" id="val-diff" style="color: var(--accent-color);">0.00</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-label">内圈圈数</div>
+                    <div class="stat-value" id="val-earth">0.00</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-label">外圈圈数</div>
+                    <div class="stat-value" id="val-mars">0.00</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Section 3: Playback -->
+        <div class="panel-section">
+            <div class="section-header">播放控制</div>
+            <div class="btn-row">
+                <button class="btn btn-primary" id="btnPlayPause">开始演示</button>
+                <button class="btn btn-secondary" id="btnReset">重置</button>
+            </div>
+            <div class="speed-control">
+                <div class="speed-opt" data-speed="0.5">0.5x</div>
+                <div class="speed-opt active" data-speed="1">1.0x</div>
+                <div class="speed-opt" data-speed="2">2.0x</div>
+                <div class="speed-opt" data-speed="5">5.0x</div>
+            </div>
+        </div>
+
+        <!-- Section 4: Time Travel -->
+        <div class="panel-section scrubber-section">
+            <div class="section-header" style="margin-bottom: 4px; text-align: center; border-bottom: none; color: var(--accent-color);">
+                ⏱️ 时间回溯 (Time Travel)
+            </div>
+            <input type="range" id="timeScrubber" min="0" max="0" value="0" step="1">
+            <div style="font-size: 0.75rem; color: var(--text-secondary); text-align: center; margin-top: 4px;">
+                <span id="scrubber-hint">拖动滑块查看任意时刻</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    /**
+     * Physics Constants & State
+     */
+    let T_INNER = 1.0;
+    let T_OUTER = 1.9;
+    
+    const R_INNER_BASE = 100; 
+    const R_OUTER_BASE = 152;  
+
+    const STATE = {
+        t: 0,
+        playing: false,
+        speed: 1.0,
+        finished: false,
+        history: [] 
+    };
+
+    // DOM References
+    const containerSim = document.getElementById('simContainer');
+    const containerChart = document.getElementById('chartContainer');
+    const cvsSim = document.getElementById('simCanvas');
+    const ctxSim = cvsSim.getContext('2d');
+    const cvsChart = document.getElementById('chartCanvas');
+    const ctxChart = cvsChart.getContext('2d');
+    
+    const elTime = document.getElementById('val-time');
+    const elDiff = document.getElementById('val-diff');
+    const elInner = document.getElementById('val-earth');
+    const elOuter = document.getElementById('val-mars');
+    
+    const inputT1 = document.getElementById('inputT1');
+    const inputT2 = document.getElementById('inputT2');
+    const lblT1 = document.getElementById('lbl-t1');
+    const lblT2 = document.getElementById('lbl-t2');
+    const dispT1 = document.getElementById('disp-t1');
+    const dispT2 = document.getElementById('disp-t2');
+    
+    const btnPlay = document.getElementById('btnPlayPause');
+    const btnReset = document.getElementById('btnReset');
+    const scrubber = document.getElementById('timeScrubber');
+    const scrubberHint = document.getElementById('scrubber-hint');
+    const pauseOverlay = document.getElementById('pauseOverlay');
+    
+    const optOrbits = document.getElementById('checkOrbits');
+    const optRadar = document.getElementById('checkRadar');
+    const optSector = document.getElementById('checkSector');
+    const speedOpts = document.querySelectorAll('.speed-opt');
+
+    /**
+     * Resize Handler (Fixes resizing loops)
+     */
+    function setupCanvas(canvas, container, ctx) {
+        const rect = container.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+        
+        canvas.width = rect.width * dpr;
+        canvas.height = rect.height * dpr;
+        
+        // CSS display size
+        canvas.style.width = `${rect.width}px`;
+        canvas.style.height = `${rect.height}px`;
+        
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.scale(dpr, dpr);
+        
+        return { w: rect.width, h: rect.height };
+    }
+
+    const resizeObserver = new ResizeObserver(entries => {
+        window.requestAnimationFrame(() => {
+            if (!Array.isArray(entries) || !entries.length) return;
+            setupCanvas(cvsSim, containerSim, ctxSim);
+            setupCanvas(cvsChart, containerChart, ctxChart);
+            drawFrame(); 
+        });
+    });
+    
+    resizeObserver.observe(containerSim);
+    resizeObserver.observe(containerChart);
+
+    /**
+     * Logic
+     */
+    function resetSim() {
+        STATE.t = 0;
+        STATE.playing = false;
+        STATE.finished = false;
+        STATE.history = [{t:0, nInner:0, nOuter:0, dN:0}];
+        
+        scrubber.value = 0;
+        scrubber.max = 0;
+        scrubber.disabled = true;
+        scrubberHint.textContent = "开始演示后可用";
+        
+        btnPlay.textContent = "开始演示";
+        btnPlay.classList.remove('btn-secondary');
+        btnPlay.classList.add('btn-primary');
+        pauseOverlay.style.display = 'none';
+        
+        updateUI(0, 0, 0, 0);
+        drawFrame();
+    }
+
+    function updatePhysics(dt) {
+        const SECONDS_PER_YEAR = 5.0;
+        const dtYears = (dt / SECONDS_PER_YEAR) * STATE.speed;
+
+        STATE.t += dtYears;
+
+        const nInner = STATE.t / T_INNER;
+        const nOuter = STATE.t / T_OUTER;
+        const dN = nInner - nOuter;
+
+        STATE.history.push({
+            t: STATE.t,
+            nInner,
+            nOuter,
+            dN
+        });
+
+        // Update scrubber only if we are at the "head" of time
+        // Since play resumes from end, we just update bounds
+        scrubber.max = STATE.history.length - 1;
+        scrubber.value = STATE.history.length - 1;
+        scrubber.disabled = false;
+        scrubberHint.textContent = "拖动回溯";
+
+        if (dN >= 1.0) {
+            STATE.playing = false;
+            STATE.finished = true;
+            btnPlay.textContent = "演示结束";
+            pauseOverlay.style.display = 'block';
+        }
+    }
+
+    /**
+     * Drawing
+     */
+    function drawFrame() {
+        // Determine which frame to draw based on scrubber
+        // If playing, we generally want the latest, but scrubber handles UI binding
+        let frameIndex = parseInt(scrubber.value);
+        if (isNaN(frameIndex)) frameIndex = 0;
+        
+        // Safety check
+        if (frameIndex >= STATE.history.length) frameIndex = STATE.history.length - 1;
+        
+        const s = STATE.history[frameIndex];
+        if (!s) return;
+
+        updateUI(s.t, s.nInner, s.nOuter, s.dN);
+        
+        const rectSim = containerSim.getBoundingClientRect();
+        drawSimulation(s, rectSim.width, rectSim.height);
+        
+        const rectChart = containerChart.getBoundingClientRect();
+        drawChart(frameIndex, rectChart.width, rectChart.height);
+    }
+
+    function updateUI(t, nI, nO, dN) {
+        elTime.innerText = t.toFixed(2);
+        elDiff.innerText = dN.toFixed(2);
+        elInner.innerText = nI.toFixed(2);
+        elOuter.innerText = nO.toFixed(2);
+    }
+
+    function drawSimulation(s, w, h) {
+        const cx = w / 2;
+        const cy = h / 2;
+        
+        ctxSim.clearRect(0, 0, w, h);
+
+        const minDim = Math.min(w, h);
+        const scale = (minDim / 2) * 0.8 / R_OUTER_BASE;
+
+        const rI = R_INNER_BASE * scale;
+        const rO = R_OUTER_BASE * scale;
+
+        // 1. Orbits
+        if (optOrbits.checked) {
+            ctxSim.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+            ctxSim.lineWidth = 1;
+            
+            ctxSim.beginPath(); ctxSim.arc(cx, cy, rI, 0, Math.PI*2); ctxSim.stroke();
+            ctxSim.beginPath(); ctxSim.arc(cx, cy, rO, 0, Math.PI*2); ctxSim.stroke();
+        }
+
+        const angInner = s.nInner * Math.PI * 2;
+        const angOuter = s.nOuter * Math.PI * 2;
+
+        const xI = cx + Math.cos(angInner) * rI;
+        const yI = cy + Math.sin(angInner) * rI;
+        const xO = cx + Math.cos(angOuter) * rO;
+        const yO = cy + Math.sin(angOuter) * rO;
+
+        // 2. Sector
+        if (optSector.checked) {
+            ctxSim.beginPath();
+            ctxSim.moveTo(cx, cy);
+            ctxSim.arc(cx, cy, rO, angOuter, angInner, false);
+            ctxSim.lineTo(cx, cy);
+            ctxSim.fillStyle = 'rgba(251, 191, 36, 0.2)';
+            ctxSim.fill();
+            ctxSim.strokeStyle = 'rgba(251, 191, 36, 0.6)';
+            ctxSim.lineWidth = 1;
+            ctxSim.stroke();
+            
+            // Text
+            const deg = Math.floor((s.dN % 1) * 360);
+            ctxSim.fillStyle = '#fbbf24';
+            ctxSim.font = 'bold 16px monospace';
+            ctxSim.textAlign = 'center';
+            ctxSim.textBaseline = 'middle';
+            ctxSim.fillText(`Δθ = ${deg}°`, cx, cy + 30 * scale);
+        }
+
+        // 3. Radar
+        if (optRadar.checked) {
+            ctxSim.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+            ctxSim.lineWidth = 1;
+            ctxSim.setLineDash([4, 4]);
+            
+            ctxSim.beginPath(); ctxSim.moveTo(cx, cy);
+            ctxSim.lineTo(cx + Math.cos(angInner)*minDim, cy + Math.sin(angInner)*minDim);
+            ctxSim.stroke();
+
+            ctxSim.beginPath(); ctxSim.moveTo(cx, cy);
+            ctxSim.lineTo(cx + Math.cos(angOuter)*minDim, cy + Math.sin(angOuter)*minDim);
+            ctxSim.stroke();
+            
+            ctxSim.setLineDash([]);
+        }
+
+        // 4. Bodies
+        // Sun
+        ctxSim.beginPath(); ctxSim.arc(cx, cy, 12 * scale, 0, Math.PI*2);
+        ctxSim.fillStyle = '#fbbf24'; ctxSim.fill();
+        ctxSim.shadowColor='#fbbf24'; ctxSim.shadowBlur=15; ctxSim.stroke(); ctxSim.shadowBlur=0;
+
+        // Inner
+        ctxSim.beginPath(); ctxSim.arc(xI, yI, 8 * scale, 0, Math.PI*2);
+        ctxSim.fillStyle = '#3b82f6'; ctxSim.fill();
+
+        // Outer
+        ctxSim.beginPath(); ctxSim.arc(xO, yO, 6 * scale, 0, Math.PI*2);
+        ctxSim.fillStyle = '#ef4444'; ctxSim.fill();
+    }
+
+    function drawChart(currIdx, w, h) {
+        const pad = {l:40, r:10, t:10, b:20};
+        ctxChart.clearRect(0,0,w,h);
+        
+        // Grid
+        ctxChart.strokeStyle = '#e2e8f0';
+        ctxChart.lineWidth = 1;
+        ctxChart.beginPath();
+        // Y=0
+        ctxChart.moveTo(pad.l, h - pad.b); ctxChart.lineTo(w - pad.r, h - pad.b);
+        // Y=1 (Target)
+        const y1 = pad.t; // Close to top
+        // Let's define Y mapping: Y=0 at h-pad.b, Y=1.2 at pad.t
+        const yMap = (val) => (h - pad.b) - (val / 1.2) * (h - pad.b - pad.t);
+        
+        // Draw Target Line Y=1
+        ctxChart.beginPath();
+        ctxChart.strokeStyle = '#ef4444';
+        ctxChart.setLineDash([5, 5]);
+        const ty = yMap(1.0);
+        ctxChart.moveTo(pad.l, ty); ctxChart.lineTo(w - pad.r, ty);
+        ctxChart.stroke();
+        ctxChart.setLineDash([]);
+        
+        // Axis Labels
+        ctxChart.fillStyle = '#64748b';
+        ctxChart.font = '10px sans-serif';
+        ctxChart.textAlign = 'right';
+        ctxChart.fillText('1.0', pad.l - 5, ty + 3);
+        ctxChart.fillText('0.0', pad.l - 5, h - pad.b);
+        
+        // Data Line
+        if (STATE.history.length < 2) return;
+        
+        // X Mapping
+        // Determine visible range. Let's make the chart auto-scroll or just squeeze?
+        // Squeezing is better for "whole picture".
+        // Max time is either current simulation time or estimated meet time.
+        // Let's use a fixed dynamic window based on Max T.
+        let maxT = STATE.history[STATE.history.length-1].t;
+        if (maxT < 2.5) maxT = 2.5; // Min window
+        
+        const xMap = (t) => pad.l + (t / maxT) * (w - pad.l - pad.r);
+        
+        ctxChart.beginPath();
+        ctxChart.strokeStyle = '#3b82f6';
+        ctxChart.lineWidth = 2;
+        
+        // Optimize drawing
+        const step = Math.max(1, Math.floor(STATE.history.length / 300));
+        
+        ctxChart.moveTo(xMap(0), yMap(0));
+        
+        // Draw up to current scrubber index (currIdx)
+        for (let i = 0; i <= currIdx; i += step) {
+            const p = STATE.history[i];
+            ctxChart.lineTo(xMap(p.t), yMap(p.dN));
+        }
+        // Ensure tip is drawn
+        const tip = STATE.history[currIdx];
+        if(tip) ctxChart.lineTo(xMap(tip.t), yMap(tip.dN));
+        
+        ctxChart.stroke();
+        
+        // Dot at tip
+        if(tip) {
+            ctxChart.beginPath();
+            ctxChart.fillStyle = '#3b82f6';
+            ctxChart.arc(xMap(tip.t), yMap(tip.dN), 4, 0, Math.PI*2);
+            ctxChart.fill();
+        }
+    }
+
+    /**
+     * Loop
+     */
+    let lastTime = 0;
+    function loop(ts) {
+        if (!lastTime) lastTime = ts;
+        const dt = (ts - lastTime) / 1000;
+        lastTime = ts;
+
+        if (STATE.playing && !STATE.finished) {
+            updatePhysics(dt);
+            drawFrame(); // Draw new state
+        }
+        // If paused, we don't need to redraw constantly unless scrubbing interaction happens
+        requestAnimationFrame(loop);
+    }
+    requestAnimationFrame(loop);
+
+    /**
+     * Interaction
+     */
+    btnPlay.addEventListener('click', () => {
+        if (STATE.finished) {
+            // If finished, reset
+            resetSim();
+            // Wait a tick then play
+            setTimeout(() => {
+                STATE.playing = true;
+                btnPlay.textContent = "暂停";
+                btnPlay.classList.replace('btn-primary', 'btn-secondary');
+            }, 10);
+        } else {
+            // Resume from scrubber position if paused and not at end
+            const currentIdx = parseInt(scrubber.value);
+            if (!STATE.playing && currentIdx < STATE.history.length - 1) {
+                // Truncate history to current point (Time Travel)
+                STATE.history = STATE.history.slice(0, currentIdx + 1);
+                // Important: Update T to match the reset point
+                STATE.t = STATE.history[currentIdx].t;
+                // Update scrubber bounds immediately to match new history length
+                scrubber.max = currentIdx; 
+            }
+
+            STATE.playing = !STATE.playing;
+            if (STATE.playing) {
+                btnPlay.textContent = "暂停";
+                btnPlay.classList.replace('btn-primary', 'btn-secondary');
+            } else {
+                btnPlay.textContent = "继续";
+                btnPlay.classList.replace('btn-secondary', 'btn-primary');
+            }
+        }
+    });
+
+    btnReset.addEventListener('click', resetSim);
+
+    // Speed
+    speedOpts.forEach(opt => {
+        opt.addEventListener('click', () => {
+            speedOpts.forEach(o => o.classList.remove('active'));
+            opt.classList.add('active');
+            STATE.speed = parseFloat(opt.dataset.speed);
+        });
+    });
+
+    // Scrubber
+    scrubber.addEventListener('input', (e) => {
+        if (STATE.history.length === 0) return;
+        
+        STATE.playing = false; // Pause on scrub
+        btnPlay.textContent = "继续";
+        btnPlay.classList.replace('btn-secondary', 'btn-primary');
+        
+        const idx = parseInt(e.target.value);
+        
+        // --- SAFE SCRUBBING FIX ---
+        // Bounds check
+        if (idx >= STATE.history.length || idx < 0) return;
+        
+        const s = STATE.history[idx];
+        if (!s) return; // Double check for safety
+
+        // Update Visualization ONLY (Do not truncate history array here)
+        STATE.t = s.t; // Update current time for UI display
+        STATE.finished = false; // Un-finish visually if we go back
+        pauseOverlay.style.display = 'none';
+        
+        drawFrame();
+    });
+
+    // Checkboxes
+    const redraw = () => drawFrame();
+    optOrbits.addEventListener('change', redraw);
+    optRadar.addEventListener('change', redraw);
+    optSector.addEventListener('change', redraw);
+
+    // Slider Logic (Drag vs Release)
+    function onSliderInput(e, label) {
+        label.textContent = parseFloat(e.target.value).toFixed(2) + " 年";
+    }
+    function onSliderChange() {
+        T_INNER = parseFloat(inputT1.value);
+        T_OUTER = parseFloat(inputT2.value);
+        dispT1.innerText = T_INNER.toFixed(2);
+        dispT2.innerText = T_OUTER.toFixed(2);
+        resetSim();
+    }
+
+    inputT1.addEventListener('input', (e) => onSliderInput(e, lblT1));
+    inputT1.addEventListener('change', onSliderChange);
+    
+    inputT2.addEventListener('input', (e) => onSliderInput(e, lblT2));
+    inputT2.addEventListener('change', onSliderChange);
+
+    // Init
+    resetSim();
+
+</script>
+</body>
+</html>

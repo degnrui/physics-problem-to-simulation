@@ -1,0 +1,1091 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>卫星变轨物理实验室 (POE任务驱动版)</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --panel-bg: #1e293b;
+            --text-color: #e2e8f0;
+            --accent-color: #38bdf8;
+            --danger-color: #ef4444;
+            --success-color: #22c55e;
+            --warn-color: #f59e0b;
+            --purple-color: #a855f7;
+            --border-color: #334155;
+        }
+
+        * { box-sizing: border-box; user-select: none; }
+
+        body {
+            margin: 0; padding: 0;
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            height: 100vh;
+            display: grid;
+            grid-template-rows: 50px 1fr; /* 顶部导航 + 主体 */
+            overflow: hidden;
+        }
+
+        /* --- 顶部导航 --- */
+        .nav-bar {
+            background: var(--panel-bg);
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            padding: 0 20px;
+            gap: 10px;
+        }
+
+        .nav-title { font-weight: bold; margin-right: 20px; color: #fff; }
+
+        .nav-tab {
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            color: #94a3b8;
+            transition: all 0.2s;
+            background: transparent;
+            border: 1px solid transparent;
+        }
+
+        .nav-tab:hover { background: rgba(255,255,255,0.05); }
+        .nav-tab.active {
+            background: rgba(56, 189, 248, 0.1);
+            color: var(--accent-color);
+            border-color: rgba(56, 189, 248, 0.3);
+            font-weight: bold;
+        }
+
+        /* --- 主体布局 --- */
+        .main-content {
+            display: grid;
+            grid-template-columns: 1.8fr 1.2fr; /* 左侧演示大一点，右侧放图表和控件 */
+            height: 100%;
+            overflow: hidden;
+        }
+
+        /* 左侧区域：现在只放 Canvas，保证全屏 */
+        .left-panel {
+            position: relative;
+            background: var(--bg-color);
+            border-right: 1px solid var(--border-color);
+            width: 100%;
+            height: 100%;
+        }
+        
+        .canvas-container {
+            position: relative;
+            background: radial-gradient(circle at center, #1a2333 0%, #0f172a 100%);
+            overflow: hidden;
+            width: 100%; 
+            height: 100%;
+        }
+
+        /* 右侧控制区 */
+        .right-panel {
+            background: var(--panel-bg);
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            overflow-y: auto; /* 允许纵向滚动 */
+        }
+
+        /* --- Task 2 的图表区域 (移至右侧，纵向排列) --- */
+        .charts-column {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            margin-top: 15px;
+            padding-bottom: 20px;
+        }
+        
+        .mini-chart {
+            background: #162030;
+            border-radius: 6px;
+            position: relative;
+            padding: 5px;
+            border: 1px solid var(--border-color);
+            height: 180px; /* 强制高度，防止看不见 */
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .chart-canvas-wrapper {
+            flex: 1;
+            position: relative;
+            min-height: 0;
+            width: 100%;
+        }
+
+        /* 图表上的推导按钮 */
+        .chart-explain-btn {
+            position: absolute;
+            top: 5px; right: 5px;
+            width: 20px; height: 20px;
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+            color: #fff;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 12px;
+            display: flex; align-items: center; justify-content: center;
+            z-index: 10;
+        }
+        .chart-explain-btn:hover { background: var(--accent-color); color: #000; border-color: var(--accent-color); }
+
+        /* --- 通用 UI 组件 --- */
+        .control-card {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid rgba(255,255,255,0.05);
+            flex-shrink: 0; /* 防止被压缩 */
+        }
+
+        .section-header {
+            font-size: 0.95em;
+            font-weight: bold;
+            color: #94a3b8;
+            margin-bottom: 10px;
+            display: flex; justify-content: space-between;
+        }
+
+        button {
+            width: 100%;
+            padding: 10px;
+            border: none;
+            border-radius: 6px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: 0.2s;
+            background: var(--border-color);
+            color: #fff;
+        }
+        button:hover { background: #475569; }
+        button.primary { background: var(--accent-color); color: #0f172a; }
+        button.primary:hover { background: #0ea5e9; }
+        
+        input[type="range"] { width: 100%; accent-color: var(--accent-color); margin: 10px 0; }
+        input[type="number"] { 
+            width: 100px; padding: 5px; border-radius: 4px; border: 1px solid var(--border-color); 
+            background: rgba(0,0,0,0.2); color: white; text-align: center;
+        }
+
+        /* --- Task 1: 动态柱状图 --- */
+        .bar-container { display: flex; flex-direction: column; gap: 12px; }
+        .bar-row { display: flex; align-items: center; gap: 10px; font-size: 0.9em; }
+        .bar-label { width: 30px; font-weight: bold; text-align: center; }
+        .bar-track { flex: 1; height: 10px; background: #334155; border-radius: 5px; overflow: hidden; }
+        .bar-fill { height: 100%; width: 50%; transition: width 0.1s; }
+        .bar-value { width: 50px; text-align: right; font-family: monospace; font-size: 0.85em; color: #94a3b8; }
+
+        /* --- Task 3: 智能计算面板 --- */
+        .calc-panel {
+            margin-top: 15px;
+            border-top: 1px solid var(--border-color);
+            padding-top: 15px;
+            display: none; 
+        }
+        
+        .calc-result-box {
+            background: rgba(0,0,0,0.3);
+            border: 1px solid var(--accent-color);
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 10px;
+        }
+        
+        .calc-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            padding-bottom: 8px;
+        }
+        .calc-row:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+        
+        .calc-label { width: 40px; font-weight: bold; color: #ccc; }
+        
+        .calc-derivation {
+            font-family: 'Times New Roman', serif;
+            font-style: italic;
+            font-size: 1.1em;
+            color: #94a3b8;
+            flex: 1;
+            text-align: center;
+        }
+        
+        .calc-final {
+            font-family: 'Times New Roman', serif;
+            font-size: 1.3em;
+            font-weight: bold;
+            color: var(--success-color);
+            width: 90px; /* 增加宽度以容纳长公式 */
+            text-align: right;
+            display: flex; justify-content: flex-end; align-items: center;
+        }
+
+        /* ================= 数学公式精细渲染 (LaTeX-like) ================= */
+        .math-display {
+            font-family: 'Times New Roman', serif;
+            font-style: italic;
+            background: rgba(255,255,255,0.05);
+            padding: 12px;
+            border-radius: 6px;
+            text-align: center;
+            margin: 8px 0;
+            color: #fff;
+            display: flex; align-items: center; justify-content: center;
+        }
+
+        /* 1. 分数结构 */
+        .frac { 
+            display: inline-flex; 
+            flex-direction: column; 
+            align-items: center; 
+            vertical-align: middle; 
+            margin: 0 4px;
+            font-size: 0.9em;
+        }
+        .frac .top { 
+            border-bottom: 1px solid currentColor; /* [修改] 自动跟随文字颜色 */
+            padding: 0 3px 1px; 
+            display: block; 
+            width: 100%;
+            text-align: center;
+        }
+        .frac .bottom { 
+            padding: 1px 3px 0; 
+            display: block; 
+            width: 100%;
+            text-align: center;
+        }
+
+        /* 2. 根号结构 (完美闭合) */
+        .sqrt-box {
+            display: inline-flex;
+            align-items: stretch;
+            margin-right: 2px;
+        }
+        .sqrt-symbol {
+            display: flex;
+            align-items: center;
+            font-size: 1.2em; /* 符号稍大 */
+            line-height: 1;
+            transform: scale(1, 1.1) translateY(-1px); /* 微调位置 */
+            padding-right: 2px;
+        }
+        .sqrt-content {
+            border-top: 1px solid currentColor; /* [修改] 使用 currentColor，自动跟随文字颜色 */
+            margin-top: 0.3em; /* 将横线对齐到根号顶部 */
+            padding-top: 2px;
+            padding-left: 1px;
+        }
+
+        /* --- 公式推导卡片 --- */
+        .formula-modal {
+            display: none;
+            background: rgba(15, 23, 42, 0.95);
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            width: 90%; max-width: 500px;
+            padding: 25px;
+            border-radius: 12px;
+            border: 1px solid var(--accent-color);
+            box-shadow: 0 20px 50px rgba(0,0,0,0.8);
+            z-index: 100;
+        }
+        .formula-title { font-size: 1.2em; color: var(--accent-color); margin-bottom: 15px; border-bottom: 1px solid #334155; padding-bottom: 10px; }
+        .formula-step { margin-bottom: 15px; font-size: 1.05em; line-height: 1.6; }
+        
+        /* --- Task 3: 表格 --- */
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85em;
+            margin-top: 10px;
+        }
+        .data-table th, .data-table td {
+            border: 1px solid var(--border-color);
+            padding: 6px;
+            text-align: center;
+        }
+        .data-table th { background: rgba(255,255,255,0.05); color: #94a3b8; }
+        
+        .radio-cell { width: 40px; }
+        input[type="radio"] { accent-color: var(--accent-color); cursor: pointer; }
+        
+        .preset-btns { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px; margin: 10px 0; }
+        .preset-btn { font-size: 0.8em; padding: 5px; background: #334155; }
+        
+        .quiz-box { margin-top: 20px; border-top: 2px solid var(--border-color); padding-top: 15px; }
+        .quiz-question { margin-bottom: 15px; line-height: 1.5; font-size: 1.05em; }
+        .quiz-options { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .quiz-btn { background: #334155; padding: 12px; border-radius: 6px; cursor: pointer; text-align: center; border: 2px solid transparent; }
+        .quiz-btn:hover { background: #475569; }
+        .quiz-btn.selected { border-color: var(--accent-color); background: rgba(56, 189, 248, 0.1); }
+        .quiz-result { margin-top: 15px; padding: 10px; border-radius: 6px; text-align: center; display: none; }
+        
+        /* 通用遮罩 */
+        .modal-overlay {
+            display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.6); z-index: 90;
+        }
+
+    </style>
+</head>
+<body data-task="1">
+
+    <nav class="nav-bar">
+        <div class="nav-title">🛰️ 卫星轨道实验室</div>
+        <div class="nav-tab active" onclick="switchTask(1)">任务一：直观感知 (Sense)</div>
+        <div class="nav-tab" onclick="switchTask(2)">任务二：探究规律 (Explore)</div>
+        <div class="nav-tab" onclick="switchTask(3)">任务三：数值预测 (Predict)</div>
+    </nav>
+
+    <div class="main-content">
+        <!-- 左侧：视图区 -->
+        <div class="left-panel">
+            <div class="canvas-container">
+                <canvas id="simCanvas"></canvas>
+                
+                <!-- 遮罩层 -->
+                <div id="modalOverlay" class="modal-overlay" onclick="closeModals()"></div>
+
+                <!-- 公式推导卡片 (Task 2) -->
+                <!-- 使用新的渲染结构 -->
+                <div id="modal-v" class="formula-modal">
+                    <div class="formula-title">为什么线速度 <i>v</i> 是这样的？</div>
+                    <div class="formula-step">
+                        <strong>物理原理：</strong>万有引力提供向心力。
+                        <div class="math-display"><i>F</i><sub>引</sub> = <i>F</i><sub>向</sub></div>
+                    </div>
+                    <div class="formula-step">
+                        <strong>公式推导：</strong>
+                        <div class="math-display">
+                            G <div class="frac"><span class="top"><i>Mm</i></span><span class="bottom"><i>r</i><sup>2</sup></span></div> 
+                            &nbsp;=&nbsp; <i>m</i> <div class="frac"><span class="top"><i>v</i><sup>2</sup></span><span class="bottom"><i>r</i></span></div>
+                        </div>
+                        <div class="math-display" style="color:var(--success-color); font-size:1.3em;">
+                            <i>v</i> =&nbsp; 
+                            <div class="sqrt-box">
+                                <span class="sqrt-symbol">&radic;</span>
+                                <div class="sqrt-content">
+                                    <div class="frac"><span class="top"><i>GM</i></span><span class="bottom"><i>r</i></span></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <button onclick="closeModals()">关闭</button>
+                </div>
+
+                <div id="modal-w" class="formula-modal">
+                    <div class="formula-title">为什么角速度 <i>&omega;</i> 是这样的？</div>
+                    <div class="formula-step">
+                        <strong>定义：</strong><i>&omega;</i> = <div class="frac"><span class="top"><i>v</i></span><span class="bottom"><i>r</i></span></div>
+                        <div class="math-display" style="color:var(--purple-color); font-size:1.3em;">
+                            <i>&omega;</i> =&nbsp; 
+                            <div class="sqrt-box">
+                                <span class="sqrt-symbol">&radic;</span>
+                                <div class="sqrt-content">
+                                    <div class="frac"><span class="top"><i>GM</i></span><span class="bottom"><i>r</i><sup>3</sup></span></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <button onclick="closeModals()">关闭</button>
+                </div>
+
+                <div id="modal-a" class="formula-modal">
+                    <div class="formula-title">为什么加速度 <i>a</i> 是这样的？</div>
+                    <div class="formula-step">
+                        <strong>原理：</strong><i>F</i><sub>引</sub> = <i>ma</i>
+                        <div class="math-display" style="color:var(--danger-color); font-size:1.3em;">
+                            <i>a</i> =&nbsp; G <div class="frac"><span class="top"><i>M</i></span><span class="bottom"><i>r</i><sup>2</sup></span></div>
+                        </div>
+                    </div>
+                    <button onclick="closeModals()">关闭</button>
+                </div>
+
+                <div id="modal-T" class="formula-modal">
+                    <div class="formula-title">为什么周期 <i>T</i> 是这样的？</div>
+                    <div class="formula-step">
+                        <strong>原理：</strong>开普勒第三定律
+                        <div class="math-display" style="color:var(--warn-color); font-size:1.3em;">
+                            <i>T</i> =&nbsp; 2&pi;
+                            <div class="sqrt-box">
+                                <span class="sqrt-symbol">&radic;</span>
+                                <div class="sqrt-content">
+                                    <div class="frac"><span class="top"><i>r</i><sup>3</sup></span><span class="bottom"><i>GM</i></span></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <button onclick="closeModals()">关闭</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 右侧：控制区 + 图表区 -->
+        <div class="right-panel">
+            
+            <!-- Task 1 & 2 公共控制：滑块 -->
+            <div class="control-card" id="sliderControlGroup">
+                <div class="section-header">
+                    <span>🕹️ 轨道控制</span>
+                    <span id="sliderVal">10000 km</span>
+                </div>
+                <input type="range" id="radiusSlider" min="6600" max="42000" step="100" value="10000">
+                <div style="display:flex; gap:10px;">
+                    <button id="playBtn" class="primary">⏯ 播放/暂停</button>
+                    <button id="resetBtn">🔄 复位</button>
+                </div>
+            </div>
+
+            <!-- Task 3 专属控制：数值输入 -->
+            <div class="control-card" id="numberControlGroup" style="display:none;">
+                <div class="section-header">🔢 轨道精确设定</div>
+                <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+                    <label>半径 <i>r</i> (km):</label>
+                    <input type="number" id="radiusInput" value="10000" min="6600" max="42000">
+                    <button class="primary" onclick="setRadiusFromInput()" style="width:auto; padding:5px 15px;">执行</button>
+                </div>
+                <div style="font-size:0.85em; color:#94a3b8; margin-bottom:5px;">快速倍率预设:</div>
+                <div class="preset-btns">
+                    <button class="preset-btn" onclick="setRadiusPreset(10000)">基础 r (1万)</button>
+                    <button class="preset-btn" onclick="setRadiusPreset(20000)">2r (2万)</button>
+                    <button class="preset-btn" onclick="setRadiusPreset(40000)">4r (4万)</button>
+                </div>
+                <button onclick="addCurrentToTable()" style="background:var(--success-color); margin-top:5px;">📝 记录并添加到对比表</button>
+            </div>
+
+            <!-- Task 1 UI: 动态柱状图 -->
+            <div id="task1-ui" class="control-card">
+                <div class="section-header">📊 物理量实时监测</div>
+                <div class="bar-container">
+                    <div class="bar-row">
+                        <div class="bar-label" style="color:var(--success-color)">v</div>
+                        <div class="bar-track"><div id="bar-v" class="bar-fill" style="background:var(--success-color)"></div></div>
+                        <div class="bar-value">速度</div>
+                    </div>
+                    <div class="bar-row">
+                        <div class="bar-label" style="color:var(--purple-color)">ω</div>
+                        <div class="bar-track"><div id="bar-w" class="bar-fill" style="background:var(--purple-color)"></div></div>
+                        <div class="bar-value">角速度</div>
+                    </div>
+                    <div class="bar-row">
+                        <div class="bar-label" style="color:var(--danger-color)">a</div>
+                        <div class="bar-track"><div id="bar-a" class="bar-fill" style="background:var(--danger-color)"></div></div>
+                        <div class="bar-value">加速度</div>
+                    </div>
+                    <div class="bar-row">
+                        <div class="bar-label" style="color:var(--warn-color)">T</div>
+                        <div class="bar-track"><div id="bar-T" class="bar-fill" style="background:var(--warn-color)"></div></div>
+                        <div class="bar-value">周期</div>
+                    </div>
+                </div>
+                <p style="font-size:12px; color:#64748b; margin-top:10px;">
+                    💡 任务：拖动滑块，直观感受高低轨道的速度差异。现在的低轨卫星非常快！
+                </p>
+            </div>
+
+            <!-- Task 2 UI: 数据记录 + 纵向排列的图表 -->
+            <div id="task2-ui" class="control-card" style="display:none;">
+                <div class="section-header">📈 规律探究任务</div>
+                <p style="font-size:13px; margin-top:0;">
+                    请<b>拖动滑块</b>改变轨道高度。系统会自动记录数据并连线。<br>
+                    观察这些曲线，它们是直线吗？还是弯曲的？
+                </p>
+                <div style="display:flex; gap:10px; margin-bottom:10px;">
+                    <button onclick="clearCharts()">🗑️ 清空图表</button>
+                </div>
+
+                <!-- 纵向排列的四个图表 -->
+                <div class="charts-column">
+                    <div class="mini-chart">
+                        <div class="chart-canvas-wrapper">
+                            <canvas id="chartV"></canvas>
+                        </div>
+                        <div class="chart-explain-btn" onclick="showDerivation('v')" title="公式">?</div>
+                    </div>
+                    <div class="mini-chart">
+                        <div class="chart-canvas-wrapper">
+                            <canvas id="chartW"></canvas>
+                        </div>
+                        <div class="chart-explain-btn" onclick="showDerivation('w')" title="公式">?</div>
+                    </div>
+                    <div class="mini-chart">
+                        <div class="chart-canvas-wrapper">
+                            <canvas id="chartA"></canvas>
+                        </div>
+                        <div class="chart-explain-btn" onclick="showDerivation('a')" title="公式">?</div>
+                    </div>
+                    <div class="mini-chart">
+                        <div class="chart-canvas-wrapper">
+                            <canvas id="chartT"></canvas>
+                        </div>
+                        <div class="chart-explain-btn" onclick="showDerivation('T')" title="公式">?</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Task 3 UI: 数值预测 & 表格 -->
+            <div id="task3-ui" class="control-card" style="display:none;">
+                
+                <div class="section-header">📋 数据对比验证表</div>
+                <p style="font-size:0.8em; color:#94a3b8; margin:0;">
+                    请在表中选中一行作为<strong style="color:var(--accent-color)">分子(A)</strong>，一行作为<strong style="color:var(--warn-color)">分母(B)</strong>，然后计算比值。
+                </p>
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th class="radio-cell" style="color:var(--accent-color)">A</th>
+                            <th class="radio-cell" style="color:var(--warn-color)">B</th>
+                            <th>r (km)</th>
+                            <th>v</th>
+                            <th>ω</th>
+                            <th>a</th>
+                            <th>T</th>
+                        </tr>
+                    </thead>
+                    <tbody id="compareTable"></tbody>
+                </table>
+                <div style="display:flex; gap:5px; margin-top:5px;">
+                    <button onclick="calculateRatio()" class="primary" style="font-size:0.9em;">🧮 验证比例关系 (Verify)</button>
+                    <button onclick="clearTable()" style="font-size:0.9em; background:#475569;">清空</button>
+                </div>
+
+                <!-- 智能计算面板 (Law-based) -->
+                <div id="calcPanel" class="calc-panel">
+                    <div class="section-header">📐 物理规律验证</div>
+                    <div class="calc-result-box">
+                        <div class="calc-row">
+                            <div class="calc-label" style="color:var(--accent-color)">r</div>
+                            <div class="calc-derivation">r<sub>A</sub> / r<sub>B</sub></div>
+                            <div id="res-r" class="calc-final">--</div>
+                        </div>
+                        <div class="calc-row">
+                            <div class="calc-label" style="color:var(--success-color)">v</div>
+                            <div class="calc-derivation">
+                                <div class="sqrt-box">
+                                    <span class="sqrt-symbol">&radic;</span>
+                                    <div class="sqrt-content">
+                                        <div class="frac"><span class="top">r<sub>B</sub></span><span class="bottom">r<sub>A</sub></span></div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div id="res-v" class="calc-final">--</div>
+                        </div>
+                        <div class="calc-row">
+                            <div class="calc-label" style="color:var(--danger-color)">a</div>
+                            <div class="calc-derivation">
+                                (<div class="frac" style="margin:0"><span class="top">r<sub>B</sub></span><span class="bottom">r<sub>A</sub></span></div>)<sup>2</sup>
+                            </div>
+                            <div id="res-a" class="calc-final">--</div>
+                        </div>
+                        <div class="calc-row">
+                            <div class="calc-label" style="color:var(--warn-color)">T</div>
+                            <div class="calc-derivation">
+                                <div class="sqrt-box">
+                                    <span class="sqrt-symbol">&radic;</span>
+                                    <div class="sqrt-content">
+                                        (<div class="frac" style="margin:0"><span class="top">r<sub>A</sub></span><span class="bottom">r<sub>B</sub></span></div>)<sup>3</sup>
+                                    </div>
+                                </div>
+                            </div>
+                            <div id="res-T" class="calc-final">--</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="quiz-box">
+                    <div class="section-header">🎯 进阶预测挑战</div>
+                    <div class="quiz-question" id="quizQuestion"></div>
+                    <div class="quiz-options" id="quizOptions"></div>
+                    <div id="quizResult" class="quiz-result"></div>
+                    <button onclick="nextQuiz()" style="margin-top:15px; background:#475569;">下一题</button>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+<script>
+// ==========================================
+// 全局状态与物理常量
+// ==========================================
+const GM = 400000; 
+const R_EARTH_PX = 50;
+const VISUAL_OMEGA_SCALE = 250; 
+
+let currentTask = 1;
+let simRunning = true;
+let satellite = { r: 150, theta: 0, trail: [] };
+let tableData = []; 
+
+// ==========================================
+// 初始化
+// ==========================================
+const canvas = document.getElementById('simCanvas');
+const ctx = canvas.getContext('2d');
+const slider = document.getElementById('radiusSlider');
+const sliderDisplay = document.getElementById('sliderVal');
+const radiusInput = document.getElementById('radiusInput');
+
+let charts = {};
+
+function init() {
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+    
+    // 监听滑块输入
+    slider.addEventListener('input', (e) => {
+        const r = parseInt(e.target.value);
+        updateSatelliteFromSlider();
+        
+        // Task 2: 自动打点
+        if (currentTask === 2) {
+            recordDataPoint(r);
+        }
+    });
+    
+    document.getElementById('playBtn').addEventListener('click', () => simRunning = !simRunning);
+    document.getElementById('resetBtn').addEventListener('click', () => { satellite.trail = []; satellite.theta=0; });
+
+    initCharts(); 
+    requestAnimationFrame(loop);
+}
+
+function switchTask(taskId) {
+    currentTask = taskId;
+    document.body.setAttribute('data-task', taskId);
+    
+    document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.nav-tab')[taskId-1].classList.add('active');
+
+    document.getElementById('task1-ui').style.display = taskId === 1 ? 'block' : 'none';
+    document.getElementById('task2-ui').style.display = taskId === 2 ? 'block' : 'none';
+    document.getElementById('task3-ui').style.display = taskId === 3 ? 'block' : 'none';
+    
+    document.getElementById('sliderControlGroup').style.display = taskId === 3 ? 'none' : 'block';
+    document.getElementById('numberControlGroup').style.display = taskId === 3 ? 'block' : 'none';
+
+    // 任务切换逻辑
+    if (taskId === 2) {
+        // 进入 Task 2: 重置图表，滑块归零，重绘
+        clearCharts();
+        setTimeout(() => {
+            slider.value = 6600;
+            updateSatelliteFromSlider();
+            Object.values(charts).forEach(c => c.resize());
+            recordDataPoint(6600); // 记录起点
+        }, 50); 
+    } 
+    
+    if (taskId === 3 && document.getElementById('quizQuestion').innerHTML.trim() === "") {
+        nextQuiz();
+    }
+}
+
+function resizeCanvas() {
+    const container = document.querySelector('.canvas-container');
+    if(container) {
+        canvas.width = container.clientWidth;
+        canvas.height = container.clientHeight;
+    }
+}
+
+// ==========================================
+// 物理引擎
+// ==========================================
+function getPhysics(r) {
+    const v = Math.sqrt(GM / r);
+    const w = v / r;
+    const a = GM / (r * r);
+    const T = (2 * Math.PI) / w;
+    return { v, w, a, T };
+}
+
+function updateSatelliteFromSlider() {
+    const realR = parseInt(slider.value);
+    sliderDisplay.innerHTML = realR + " km";
+    radiusInput.value = realR;
+    updateSatelliteVisuals(realR);
+}
+
+function setRadiusFromInput() {
+    let val = parseInt(radiusInput.value);
+    if(val < 6600) val = 6600;
+    if(val > 42000) val = 42000;
+    radiusInput.value = val;
+    slider.value = val;
+    sliderDisplay.innerText = val + " km";
+    updateSatelliteVisuals(val);
+}
+
+function setRadiusPreset(val) {
+    radiusInput.value = val;
+    setRadiusFromInput();
+}
+
+function updateSatelliteVisuals(realR) {
+    const t = (realR - 6600) / (42000 - 6600);
+    satellite.r = 80 + t * 200;
+    satellite.trail = []; 
+}
+
+function loop() {
+    if (simRunning) {
+        const realR = parseInt(slider.value);
+        const phys = getPhysics(realR);
+        
+        satellite.theta += phys.w * VISUAL_OMEGA_SCALE; 
+        
+        satellite.trail.push({x: satellite.r * Math.cos(satellite.theta), y: satellite.r * Math.sin(satellite.theta)});
+        
+        // [保持] 拖尾长度 10
+        if(satellite.trail.length > 10) satellite.trail.shift();
+
+        if(currentTask === 1) updateBars(phys);
+    }
+    draw();
+    requestAnimationFrame(loop);
+}
+
+function draw() {
+    const w = canvas.width, h = canvas.height;
+    const cx = w/2, cy = h/2;
+    ctx.clearRect(0,0,w,h);
+
+    ctx.beginPath(); ctx.arc(cx, cy, R_EARTH_PX, 0, Math.PI*2);
+    ctx.fillStyle = '#2563eb'; ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.1)'; ctx.lineWidth=1; 
+    ctx.beginPath(); ctx.moveTo(cx, cy-R_EARTH_PX); ctx.lineTo(cx, cy+R_EARTH_PX); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx-R_EARTH_PX, cy); ctx.lineTo(cx+R_EARTH_PX, cy); ctx.stroke();
+
+    const sx = cx + satellite.r * Math.cos(satellite.theta);
+    const sy = cy + satellite.r * Math.sin(satellite.theta);
+
+    ctx.beginPath(); ctx.arc(cx, cy, satellite.r, 0, Math.PI*2);
+    ctx.strokeStyle = 'rgba(56, 189, 248, 0.3)'; ctx.lineWidth=1; ctx.stroke();
+
+    // [修改点] 红色实线拖尾
+    if(satellite.trail.length > 1) {
+        ctx.beginPath();
+        ctx.moveTo(cx + satellite.trail[0].x, cy + satellite.trail[0].y);
+        for(let i=1; i<satellite.trail.length; i++) {
+            ctx.lineTo(cx + satellite.trail[i].x, cy + satellite.trail[i].y);
+        }
+        ctx.strokeStyle = '#ef4444'; // 红色
+        ctx.lineWidth = 4;
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'round';
+        ctx.stroke();
+    }
+
+    ctx.beginPath(); ctx.rect(sx-6, sy-6, 12, 12);
+    ctx.fillStyle = '#38bdf8'; ctx.fill();
+}
+
+// ==========================================
+// Task 1: 动态柱状图
+// ==========================================
+function updateBars(phys) {
+    const vMax = Math.sqrt(GM/6600); 
+    const vPct = (phys.v / vMax) * 100;
+    
+    const wMax = Math.sqrt(GM/Math.pow(6600,3));
+    const wPct = (phys.w / wMax) * 100;
+    
+    const aMax = GM/(6600*6600);
+    const aPct = (phys.a / aMax) * 100;
+    
+    const TMax = 2*Math.PI / Math.sqrt(GM/Math.pow(42000,3));
+    const TPct = (phys.T / TMax) * 100;
+
+    document.getElementById('bar-v').style.width = `${Math.min(100, vPct)}%`;
+    document.getElementById('bar-w').style.width = `${Math.min(100, wPct)}%`;
+    document.getElementById('bar-a').style.width = `${Math.min(100, aPct)}%`;
+    document.getElementById('bar-T').style.width = `${Math.min(100, TPct)}%`;
+}
+
+// ==========================================
+// Task 2: 图表
+// ==========================================
+function initCharts() {
+    const commonConfig = {
+        type: 'scatter',
+        data: { datasets: [{ 
+            label: 'Data', 
+            data: [], 
+            backgroundColor: '#38bdf8',
+            borderColor: '#38bdf8',
+            showLine: true,
+            tension: 0.3,
+            pointRadius: 2
+        }]},
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: false,
+            layout: { padding: { left: 0, right: 10, top: 0, bottom: 0 } },
+            scales: { 
+                x: { 
+                    display: true, 
+                    type: 'linear',
+                    title: { display: false },
+                    ticks: { color: '#64748b', font: {size: 10}, maxTicksLimit: 5 },
+                    grid: { color: '#334155' },
+                    suggestedMin: 6000, 
+                    suggestedMax: 45000 
+                }, 
+                y: { 
+                    display: true, 
+                    type: 'linear',
+                    ticks: { display: true, color: '#64748b', font: {size: 10}, maxTicksLimit: 5 }, 
+                    grid: { color: '#334155' },
+                    beginAtZero: true
+                } 
+            },
+            plugins: { legend: { display: false } }
+        }
+    };
+
+    charts.v = new Chart(document.getElementById('chartV'), {
+        ...commonConfig,
+        data: { datasets: [{ ...commonConfig.data.datasets[0], backgroundColor: '#22c55e', borderColor: '#22c55e' }] },
+        options: { ...commonConfig.options, plugins: { title: { display: true, text: 'v - r', color:'#22c55e', font: {size:12} } } }
+    });
+
+    charts.w = new Chart(document.getElementById('chartW'), {
+        ...commonConfig,
+        data: { datasets: [{ ...commonConfig.data.datasets[0], backgroundColor: '#a855f7', borderColor: '#a855f7' }] },
+        options: { ...commonConfig.options, plugins: { title: { display: true, text: 'ω - r', color:'#a855f7', font: {size:12} } } }
+    });
+
+    charts.a = new Chart(document.getElementById('chartA'), {
+        ...commonConfig,
+        data: { datasets: [{ ...commonConfig.data.datasets[0], backgroundColor: '#ef4444', borderColor: '#ef4444' }] },
+        options: { ...commonConfig.options, plugins: { title: { display: true, text: 'a - r', color:'#ef4444', font: {size:12} } } }
+    });
+
+    charts.T = new Chart(document.getElementById('chartT'), {
+        ...commonConfig,
+        data: { datasets: [{ ...commonConfig.data.datasets[0], backgroundColor: '#f59e0b', borderColor: '#f59e0b' }] },
+        options: { ...commonConfig.options, plugins: { title: { display: true, text: 'T - r', color:'#f59e0b', font: {size:12} } } }
+    });
+}
+
+function recordDataPoint(r) {
+    if (!r) r = parseInt(slider.value);
+    const phys = getPhysics(r);
+
+    const lastV = charts.v.data.datasets[0].data;
+    if (lastV.length > 0) {
+        const lastR = lastV[lastV.length - 1].x;
+        if (Math.abs(r - lastR) < 100) return;
+    }
+
+    charts.v.data.datasets[0].data.push({x: r, y: phys.v});
+    charts.w.data.datasets[0].data.push({x: r, y: phys.w});
+    charts.a.data.datasets[0].data.push({x: r, y: phys.a});
+    charts.T.data.datasets[0].data.push({x: r, y: phys.T});
+
+    Object.values(charts).forEach(c => {
+        c.data.datasets[0].data.sort((a,b) => a.x - b.x);
+        c.update('none');
+    });
+}
+
+function clearCharts() {
+    Object.values(charts).forEach(c => {
+        c.data.datasets[0].data = [];
+        c.update();
+    });
+}
+
+// 弹窗逻辑
+function showDerivation(type) {
+    closeModals();
+    document.getElementById('modalOverlay').style.display = 'block';
+    document.getElementById(`modal-${type}`).style.display = 'block';
+}
+
+function closeModals() {
+    document.getElementById('modalOverlay').style.display = 'none';
+    document.querySelectorAll('.formula-modal').forEach(el => el.style.display = 'none');
+}
+
+// ==========================================
+// Task 3: 预测题 & 智能对比 (Law-Based)
+// ==========================================
+let currentQuiz = 0;
+const quizzes = [
+    {
+        q: "如果轨道半径 <i>r</i> 变为原来的 <strong>4倍</strong>，<br>线速度 <i>v</i> 会变为原来的多少？",
+        target: 'v', correct: 0.5,
+        explain: "公式 <i>v</i> &propto; 1/&radic;<i>r</i>。<i>r</i> 变4倍，<i>v</i> 变 &radic;(1/4) = 1/2。"
+    },
+    {
+        q: "如果轨道半径 <i>r</i> 变为原来的 <strong>4倍</strong>，<br>加速度 <i>a</i> 会变为原来的多少？",
+        target: 'a', correct: 0.0625,
+        explain: "公式 <i>a</i> &propto; 1/<i>r</i><sup>2</sup>。<i>r</i> 变4倍，<i>a</i> 变 1/16。",
+        options: [{txt:"1/4 倍", v:0.25}, {txt:"1/8 倍", v:0.125}, {txt:"1/16 倍", v:0.0625}, {txt:"4 倍", v:4}]
+    },
+    {
+        q: "如果轨道半径 <i>r</i> 变为原来的 <strong>4倍</strong>，<br>周期 <i>T</i> 会变为原来的多少？",
+        target: 'T', correct: 8,
+        explain: "公式 <i>T</i> &propto; <i>r</i><sup>1.5</sup>。4<sup>1.5</sup> = 8倍。"
+    },
+    {
+        q: "如果轨道半径 <i>r</i> 变为原来的 <strong>2倍</strong>，<br>角速度 <i>&omega;</i> 会变为原来的多少？",
+        target: 'w', correct: 0.3535,
+        explain: "公式 <i>&omega;</i> &propto; 1/<i>r</i><sup>1.5</sup>。<i>r</i> 变2倍，<i>&omega;</i> 变 1/2.828 (即 1/√8)。",
+        options: [{txt:"1/2 倍", v:0.5}, {txt:"约 0.35 倍", v:0.3535}, {txt:"1/4 倍", v:0.25}, {txt:"1/8 倍", v:0.125}]
+    }
+];
+
+function nextQuiz() {
+    const q = quizzes[currentQuiz % quizzes.length];
+    document.getElementById('quizQuestion').innerHTML = q.q;
+    document.getElementById('quizResult').style.display = 'none';
+    const optsDiv = document.getElementById('quizOptions');
+    optsDiv.innerHTML = '';
+    let options = q.options || [{txt:"1/4 倍", v:0.25}, {txt:"1/2 倍", v:0.5}, {txt:"2 倍", v:2}, {txt:"8 倍", v:8}];
+    options.forEach(opt => {
+        const btn = document.createElement('div');
+        btn.className = 'quiz-btn';
+        btn.innerText = opt.txt;
+        btn.onclick = () => checkAnswer(opt.v, btn);
+        optsDiv.appendChild(btn);
+    });
+}
+
+function checkAnswer(val, btnEl) {
+    const q = quizzes[currentQuiz % quizzes.length];
+    const resBox = document.getElementById('quizResult');
+    document.querySelectorAll('.quiz-btn').forEach(b => b.classList.remove('selected'));
+    btnEl.classList.add('selected');
+    resBox.style.display = 'block';
+    
+    if (Math.abs(val - q.correct) < 0.01) {
+        resBox.style.background = 'rgba(34, 197, 94, 0.2)';
+        resBox.style.border = '1px solid #22c55e';
+        resBox.innerHTML = `<strong>✅ 回答正确!</strong><br>${q.explain}`;
+        setTimeout(() => { currentQuiz++; nextQuiz(); }, 4000);
+    } else {
+        resBox.style.background = 'rgba(239, 68, 68, 0.2)';
+        resBox.style.border = '1px solid #ef4444';
+        resBox.innerHTML = `<strong>❌ 再想想</strong><br>建议先在表格中计算比值验证。`;
+    }
+}
+
+// --- Task 3 Logic: 自主选择与智能格式化 ---
+
+function addCurrentToTable() {
+    const r = parseInt(radiusInput.value);
+    const phys = getPhysics(r);
+    
+    const rowIdx = tableData.length;
+    tableData.push({ id: rowIdx, r: r, ...phys });
+    
+    const tableBody = document.getElementById('compareTable');
+    const row = document.createElement('tr');
+    
+    const isCheckedA = rowIdx === 1 ? 'checked' : '';
+    const isCheckedB = rowIdx === 0 ? 'checked' : '';
+    
+    row.innerHTML = `
+        <td class="radio-cell"><input type="radio" name="radioA" value="${rowIdx}" ${isCheckedA}></td>
+        <td class="radio-cell"><input type="radio" name="radioB" value="${rowIdx}" ${isCheckedB}></td>
+        <td>${r}</td>
+        <td>${phys.v.toFixed(2)}</td>
+        <td>${phys.w.toFixed(5)}</td>
+        <td>${phys.a.toFixed(4)}</td>
+        <td>${phys.T.toFixed(0)}</td>
+    `;
+    tableBody.appendChild(row);
+}
+
+function calculateRatio() {
+    const selA = document.querySelector('input[name="radioA"]:checked');
+    const selB = document.querySelector('input[name="radioB"]:checked');
+    
+    if(!selA || !selB) {
+        alert("请先在表格左侧选择一行作为分子(A)，一行作为分母(B)");
+        return;
+    }
+    
+    const idxA = parseInt(selA.value);
+    const idxB = parseInt(selB.value);
+    const rowA = tableData[idxA];
+    const rowB = tableData[idxB];
+    
+    document.getElementById('calcPanel').style.display = 'block';
+    
+    const ratioR = rowA.r / rowB.r;
+    
+    // R
+    document.getElementById('res-r').innerText = formatRatio(ratioR);
+    
+    // V = sqrt(rB/rA)
+    const invRatio = 1 / ratioR;
+    const contentV = formatFractionOrInt(invRatio);
+    document.getElementById('res-v').innerHTML = renderSqrt(contentV);
+    
+    // A = (rB/rA)^2
+    // 如果 ratioR 是 4，A ratio 是 1/16。显示 (1/4)^2 还是 1/16?
+    // 用户要求 "保留数据的原始规律"，所以最好显示公式形式
+    // A = (1/ratioR)^2
+    document.getElementById('res-a').innerHTML = `(${formatFractionOrInt(invRatio)})<sup>2</sup>`;
+    
+    // T = sqrt( (rA/rB)^3 )
+    document.getElementById('res-T').innerHTML = renderSqrt(`(${formatFractionOrInt(ratioR)})<sup>3</sup>`);
+}
+
+function renderSqrt(content) {
+    return `<div class="sqrt-box"><span class="sqrt-symbol">&radic;</span><div class="sqrt-content">${content}</div></div>`;
+}
+
+function formatRatio(r) {
+    if(Math.abs(r - Math.round(r)) < 0.01) return Math.round(r);
+    return formatFractionOrInt(r);
+}
+
+function formatFractionOrInt(val) {
+    // 整数
+    if(Math.abs(val - Math.round(val)) < 0.01) return Math.round(val);
+    
+    // 常见分数
+    if(Math.abs(val - 0.5) < 0.01) return createFracHTML("1", "2");
+    if(Math.abs(val - 0.25) < 0.01) return createFracHTML("1", "4");
+    if(Math.abs(val - 0.125) < 0.01) return createFracHTML("1", "8");
+    if(Math.abs(val - 0.0625) < 0.01) return createFracHTML("1", "16");
+    
+    return val.toFixed(2);
+}
+
+function createFracHTML(top, bottom) {
+    return `<div class="frac" style="margin:0"><span class="top">${top}</span><span class="bottom">${bottom}</span></div>`;
+}
+
+function clearTable() {
+    document.getElementById('compareTable').innerHTML = '';
+    tableData = [];
+    document.getElementById('calcPanel').style.display = 'none';
+}
+
+init();
+
+</script>
+</body>
+</html>

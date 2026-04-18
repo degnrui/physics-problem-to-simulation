@@ -1,0 +1,1398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Physics Simulation Generator</title>
+    <!-- Tailwind CSS v3 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome -->
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
+    <!-- Tailwind Configuration -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#1e88e5',
+                        secondary: '#ff9800',
+                        light: '#f5f5f5',
+                        dark: '#333333'
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                    animation: {
+                        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                        'bounce-slow': 'bounce 2s infinite',
+                        'spin-slow': 'spin 3s linear infinite',
+                    }
+                }
+            }
+        }
+    </script>
+    <style type="text/tailwindcss">
+        @layer utilities {
+            .text-shadow {
+                text-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            }
+            .transition-height {
+                transition: height 0.3s ease;
+            }
+            .bg-gradient-blue-orange {
+                background: linear-gradient(135deg, #1e88e5 0%, #ff9800 100%);
+            }
+            .card-hover {
+                @apply transition-all duration-300 hover:shadow-lg hover:-translate-y-1;
+            }
+            .btn-primary {
+                @apply bg-primary text-white px-6 py-2 rounded-lg shadow-md hover:bg-blue-600 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50;
+            }
+            .btn-secondary {
+                @apply bg-secondary text-white px-6 py-2 rounded-lg shadow-md hover:bg-orange-600 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-opacity-50;
+            }
+            .btn-outline {
+                @apply border border-primary text-primary px-6 py-2 rounded-lg shadow-sm hover:bg-primary hover:text-white transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50;
+            }
+            .input-field {
+                @apply w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent;
+            }
+            .progress-step {
+                @apply flex flex-col items-center justify-center p-4 rounded-lg transition-all duration-300;
+            }
+            .progress-step.active {
+                @apply bg-blue-50 border-2 border-primary;
+            }
+            .progress-step.completed {
+                @apply bg-green-50 border-2 border-green-500;
+            }
+            .slider-thumb {
+                @apply appearance-none w-4 h-4 rounded-full bg-primary cursor-pointer;
+            }
+            .slider-track {
+                @apply appearance-none h-2 rounded-lg bg-gray-200;
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 font-sans">
+    <!-- Navigation -->
+    <nav class="bg-white shadow-md fixed w-full z-10">
+        <div class="container mx-auto px-4 py-3 flex justify-between items-center">
+            <div class="flex items-center space-x-2">
+                <img src="https://p3-flow-imagex-sign.byteimg.com/tos-cn-i-a9rns2rl98/rc/pc/super_tool/740bb5523f95463aa633c81b82e5027e~tplv-a9rns2rl98-image.image?lk3s=8e244e95&rcl=202604180200480AA1DEA9D475C26480F7&rrcfp=f06b921b&x-expires=1779040860&x-signature=cRZsYSFaLvu9zGVBG473pgUneXA%3D" alt="Physics Simulation Generator" class="h-10">
+                <span class="text-xl font-bold text-gray-800">Physics Simulation Generator</span>
+            </div>
+            <div class="hidden md:flex items-center space-x-6">
+                <a href="#" class="text-gray-600 hover:text-primary transition-colors" id="nav-home">Home</a>
+                <a href="#" class="text-gray-600 hover:text-primary transition-colors" id="nav-examples">Examples</a>
+                <a href="#" class="text-gray-600 hover:text-primary transition-colors" id="nav-help">Help</a>
+                <button class="btn-primary" id="nav-create">Create New</button>
+            </div>
+            <button class="md:hidden text-gray-600 focus:outline-none" id="mobile-menu-button">
+                <i class="fa fa-bars text-2xl"></i>
+            </button>
+        </div>
+        <!-- Mobile Menu -->
+        <div class="md:hidden hidden bg-white shadow-lg absolute w-full" id="mobile-menu">
+            <div class="container mx-auto px-4 py-2 flex flex-col space-y-3">
+                <a href="#" class="text-gray-600 hover:text-primary transition-colors py-2" id="mobile-nav-home">Home</a>
+                <a href="#" class="text-gray-600 hover:text-primary transition-colors py-2" id="mobile-nav-examples">Examples</a>
+                <a href="#" class="text-gray-600 hover:text-primary transition-colors py-2" id="mobile-nav-help">Help</a>
+                <button class="btn-primary w-full" id="mobile-nav-create">Create New</button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="container mx-auto px-4 pt-24 pb-12">
+        <!-- Page Container -->
+        <div id="page-container">
+            <!-- Input Page -->
+            <div id="input-page" class="page active">
+                <div class="max-w-4xl mx-auto">
+                    <div class="text-center mb-12">
+                        <h1 class="text-4xl font-bold text-gray-800 mb-4">Turn Physics Problems into Interactive Simulations</h1>
+                        <p class="text-xl text-gray-600">Create engaging physics simulations from textbook problems in minutes</p>
+                    </div>
+
+                    <div class="bg-white rounded-xl shadow-lg p-8 mb-8">
+                        <h2 class="text-2xl font-bold text-gray-800 mb-6">Describe Your Physics Problem</h2>
+                        
+                        <div class="mb-6">
+                            <label for="problem-description" class="block text-gray-700 font-medium mb-2">Problem Description</label>
+                            <textarea id="problem-description" rows="4" class="input-field" placeholder="Enter the physics problem or teaching objective..."></textarea>
+                            <p class="mt-2 text-sm text-gray-500">Example: A ball is thrown from the top of a 10-meter building with an initial velocity of 15 m/s at an angle of 30 degrees above the horizontal. Calculate the time of flight and the range of the projectile.</p>
+                        </div>
+
+                        <div class="mb-6">
+                            <label class="block text-gray-700 font-medium mb-2">Upload Supporting Materials (Optional)</label>
+                            <div class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center" id="upload-area">
+                                <i class="fa fa-cloud-upload text-4xl text-gray-400 mb-2"></i>
+                                <p class="text-gray-500 mb-2">Drag and drop files here or click to browse</p>
+                                <p class="text-xs text-gray-400">Supported formats: PDF, PNG, JPG</p>
+                                <input type="file" id="file-upload" class="hidden" accept=".pdf,.png,.jpg">
+                                <button class="mt-4 btn-outline" id="browse-files">Browse Files</button>
+                            </div>
+                        </div>
+
+                        <div class="mb-6">
+                            <label class="block text-gray-700 font-medium mb-2">Simulation Type</label>
+                            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                <div class="border border-gray-200 rounded-lg p-4 text-center cursor-pointer hover:border-primary hover:bg-blue-50 transition-colors simulation-type-option">
+                                    <img src="https://p3-flow-imagex-sign.byteimg.com/tos-cn-i-a9rns2rl98/rc/pc/super_tool/f29dff732c6249fab69023ed132dbeeb~tplv-a9rns2rl98-image.image?lk3s=8e244e95&rcl=202604180200480AA1DEA9D475C26480F7&rrcfp=f06b921b&x-expires=1779040868&x-signature=TE%2FELZ69f7SJiqveB8fYow0PWk8%3D" alt="Projectile Motion" class="h-12 mx-auto mb-2">
+                                    <p class="text-sm font-medium">Projectile Motion</p>
+                                </div>
+                                <div class="border border-gray-200 rounded-lg p-4 text-center cursor-pointer hover:border-primary hover:bg-blue-50 transition-colors simulation-type-option">
+                                    <img src="https://p3-flow-imagex-sign.byteimg.com/tos-cn-i-a9rns2rl98/rc/pc/super_tool/f29dff732c6249fab69023ed132dbeeb~tplv-a9rns2rl98-image.image?lk3s=8e244e95&rcl=202604180200480AA1DEA9D475C26480F7&rrcfp=f06b921b&x-expires=1779040868&x-signature=TE%2FELZ69f7SJiqveB8fYow0PWk8%3D" alt="Pendulum" class="h-12 mx-auto mb-2">
+                                    <p class="text-sm font-medium">Pendulum</p>
+                                </div>
+                                <div class="border border-gray-200 rounded-lg p-4 text-center cursor-pointer hover:border-primary hover:bg-blue-50 transition-colors simulation-type-option">
+                                    <img src="https://p3-flow-imagex-sign.byteimg.com/tos-cn-i-a9rns2rl98/rc/pc/super_tool/f29dff732c6249fab69023ed132dbeeb~tplv-a9rns2rl98-image.image?lk3s=8e244e95&rcl=202604180200480AA1DEA9D475C26480F7&rrcfp=f06b921b&x-expires=1779040868&x-signature=TE%2FELZ69f7SJiqveB8fYow0PWk8%3D" alt="Circuit" class="h-12 mx-auto mb-2">
+                                    <p class="text-sm font-medium">Circuit</p>
+                                </div>
+                                <div class="border border-gray-200 rounded-lg p-4 text-center cursor-pointer hover:border-primary hover:bg-blue-50 transition-colors simulation-type-option">
+                                    <img src="https://p3-flow-imagex-sign.byteimg.com/tos-cn-i-a9rns2rl98/rc/pc/super_tool/f29dff732c6249fab69023ed132dbeeb~tplv-a9rns2rl98-image.image?lk3s=8e244e95&rcl=202604180200480AA1DEA9D475C26480F7&rrcfp=f06b921b&x-expires=1779040868&x-signature=TE%2FELZ69f7SJiqveB8fYow0PWk8%3D" alt="Waves" class="h-12 mx-auto mb-2">
+                                    <p class="text-sm font-medium">Waves</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mb-6">
+                            <label class="block text-gray-700 font-medium mb-2">Additional Options</label>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div class="flex items-center">
+                                    <input type="checkbox" id="option-charts" class="h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded">
+                                    <label for="option-charts" class="ml-2 block text-gray-700">Include Data Charts</label>
+                                </div>
+                                <div class="flex items-center">
+                                    <input type="checkbox" id="option-real-time" class="h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded">
+                                    <label for="option-real-time" class="ml-2 block text-gray-700">Real-time Parameter Adjustment</label>
+                                </div>
+                                <div class="flex items-center">
+                                    <input type="checkbox" id="option-3d" class="h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded">
+                                    <label for="option-3d" class="ml-2 block text-gray-700">3D Visualization</label>
+                                </div>
+                                <div class="flex items-center">
+                                    <input type="checkbox" id="option-quiz" class="h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded">
+                                    <label for="option-quiz" class="ml-2 block text-gray-700">Include Quiz Questions</label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="flex flex-col md:flex-row space-y-4 md:space-y-0 md:space-x-4">
+                            <button class="btn-primary flex-1" id="generate-simulation">Generate Simulation</button>
+                            <button class="btn-outline flex-1" id="clarify-requirements">Clarify Requirements</button>
+                        </div>
+                    </div>
+
+                    <div class="bg-white rounded-xl shadow-lg p-8">
+                        <h2 class="text-2xl font-bold text-gray-800 mb-6">How It Works</h2>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            <div class="text-center">
+                                <div class="bg-blue-100 rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4">
+                                    <i class="fa fa-pencil text-2xl text-primary"></i>
+                                </div>
+                                <h3 class="text-lg font-semibold mb-2">1. Describe Your Problem</h3>
+                                <p class="text-gray-600">Enter a physics problem or upload supporting materials</p>
+                            </div>
+                            <div class="text-center">
+                                <div class="bg-blue-100 rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4">
+                                    <i class="fa fa-cogs text-2xl text-primary"></i>
+                                </div>
+                                <h3 class="text-lg font-semibold mb-2">2. AI Generates Simulation</h3>
+                                <p class="text-gray-600">Our system analyzes and creates an interactive simulation</p>
+                            </div>
+                            <div class="text-center">
+                                <div class="bg-blue-100 rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4">
+                                    <i class="fa fa-flask text-2xl text-primary"></i>
+                                </div>
+                                <h3 class="text-lg font-semibold mb-2">3. Explore and Teach</h3>
+                                <p class="text-gray-600">Adjust parameters and use the simulation in your teaching</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Progress Page -->
+            <div id="progress-page" class="page hidden">
+                <div class="max-w-4xl mx-auto">
+                    <div class="text-center mb-12">
+                        <h1 class="text-4xl font-bold text-gray-800 mb-4">Generating Your Simulation</h1>
+                        <p class="text-xl text-gray-600">Please wait while we create your interactive physics simulation</p>
+                    </div>
+
+                    <div class="bg-white rounded-xl shadow-lg p-8 mb-8">
+                        <div class="mb-8">
+                            <div class="flex justify-between mb-6">
+                                <div class="progress-step active" id="step-1">
+                                    <img src="https://p3-flow-imagex-sign.byteimg.com/tos-cn-i-a9rns2rl98/rc/pc/super_tool/955e226f3e87433a9f5a1100544076fa~tplv-a9rns2rl98-image.image?lk3s=8e244e95&rcl=202604180200480AA1DEA9D475C26480F7&rrcfp=f06b921b&x-expires=1779040877&x-signature=bwrYQPXvOy9q0hVkHoOwOVxcClc%3D" alt="Analyzing Problem" class="h-16 mb-2">
+                                    <h3 class="text-lg font-semibold text-primary">Analyzing Problem</h3>
+                                    <p class="text-sm text-gray-600">Understanding physics concepts</p>
+                                </div>
+                                <div class="hidden md:block w-16 self-center">
+                                    <div class="h-1 bg-gray-300 rounded-full">
+                                        <div class="h-1 bg-primary rounded-full w-0 transition-all duration-1000" id="progress-bar-1"></div>
+                                    </div>
+                                </div>
+                                <div class="progress-step" id="step-2">
+                                    <img src="https://p3-flow-imagex-sign.byteimg.com/tos-cn-i-a9rns2rl98/rc/pc/super_tool/955e226f3e87433a9f5a1100544076fa~tplv-a9rns2rl98-image.image?lk3s=8e244e95&rcl=202604180200480AA1DEA9D475C26480F7&rrcfp=f06b921b&x-expires=1779040877&x-signature=bwrYQPXvOy9q0hVkHoOwOVxcClc%3D" alt="Extracting Model" class="h-16 mb-2">
+                                    <h3 class="text-lg font-semibold text-gray-500">Extracting Model</h3>
+                                    <p class="text-sm text-gray-600">Creating mathematical model</p>
+                                </div>
+                                <div class="hidden md:block w-16 self-center">
+                                    <div class="h-1 bg-gray-300 rounded-full">
+                                        <div class="h-1 bg-primary rounded-full w-0 transition-all duration-1000" id="progress-bar-2"></div>
+                                    </div>
+                                </div>
+                                <div class="progress-step" id="step-3">
+                                    <img src="https://p3-flow-imagex-sign.byteimg.com/tos-cn-i-a9rns2rl98/rc/pc/super_tool/955e226f3e87433a9f5a1100544076fa~tplv-a9rns2rl98-image.image?lk3s=8e244e95&rcl=202604180200480AA1DEA9D475C26480F7&rrcfp=f06b921b&x-expires=1779040877&x-signature=bwrYQPXvOy9q0hVkHoOwOVxcClc%3D" alt="Designing Interaction" class="h-16 mb-2">
+                                    <h3 class="text-lg font-semibold text-gray-500">Designing Interaction</h3>
+                                    <p class="text-sm text-gray-600">Building user interface</p>
+                                </div>
+                                <div class="hidden md:block w-16 self-center">
+                                    <div class="h-1 bg-gray-300 rounded-full">
+                                        <div class="h-1 bg-primary rounded-full w-0 transition-all duration-1000" id="progress-bar-3"></div>
+                                    </div>
+                                </div>
+                                <div class="progress-step" id="step-4">
+                                    <img src="https://p3-flow-imagex-sign.byteimg.com/tos-cn-i-a9rns2rl98/rc/pc/super_tool/955e226f3e87433a9f5a1100544076fa~tplv-a9rns2rl98-image.image?lk3s=8e244e95&rcl=202604180200480AA1DEA9D475C26480F7&rrcfp=f06b921b&x-expires=1779040877&x-signature=bwrYQPXvOy9q0hVkHoOwOVxcClc%3D" alt="Generating Simulation" class="h-16 mb-2">
+                                    <h3 class="text-lg font-semibold text-gray-500">Generating Simulation</h3>
+                                    <p class="text-sm text-gray-600">Finalizing simulation</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="bg-blue-50 rounded-lg p-6 mb-8">
+                            <h3 class="text-xl font-semibold text-gray-800 mb-4" id="current-step-title">Analyzing Problem</h3>
+                            <div class="flex items-start">
+                                <div class="animate-spin-slow mr-4 text-primary">
+                                    <i class="fa fa-circle-o-notch text-2xl"></i>
+                                </div>
+                                <div>
+                                    <p class="text-gray-700 mb-4" id="current-step-description">We're analyzing your physics problem to identify key concepts and parameters. This helps us understand what type of simulation would be most appropriate.</p>
+                                    <div class="bg-white rounded-lg p-4 border border-gray-200">
+                                        <h4 class="font-medium text-gray-800 mb-2">Current Findings:</h4>
+                                        <ul class="list-disc list-inside text-gray-700 space-y-1" id="current-findings">
+                                            <li>Identified as a projectile motion problem</li>
+                                            <li>Key parameters: initial velocity, angle, height</li>
+                                            <li>Calculating time of flight and range</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="flex justify-between">
+                            <button class="btn-outline" id="back-to-input">Back</button>
+                            <button class="btn-primary" id="view-simulation" disabled>View Simulation</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Simulation Page -->
+            <div id="simulation-page" class="page hidden">
+                <div class="max-w-6xl mx-auto">
+                    <div class="text-center mb-8">
+                        <h1 class="text-4xl font-bold text-gray-800 mb-4">Projectile Motion Simulation</h1>
+                        <p class="text-xl text-gray-600">Interactive simulation based on your physics problem</p>
+                    </div>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                        <!-- Simulation Area -->
+                        <div class="lg:col-span-2">
+                            <div class="bg-white rounded-xl shadow-lg overflow-hidden">
+                                <div class="p-4 bg-gray-100 border-b flex justify-between items-center">
+                                    <h2 class="text-lg font-semibold text-gray-800">Simulation</h2>
+                                    <div class="flex space-x-2">
+                                        <button class="bg-white p-2 rounded-md shadow-sm hover:bg-gray-50 transition-colors" id="play-pause">
+                                            <i class="fa fa-play text-primary"></i>
+                                        </button>
+                                        <button class="bg-white p-2 rounded-md shadow-sm hover:bg-gray-50 transition-colors" id="reset-simulation">
+                                            <i class="fa fa-refresh text-primary"></i>
+                                        </button>
+                                        <button class="bg-white p-2 rounded-md shadow-sm hover:bg-gray-50 transition-colors" id="fullscreen">
+                                            <i class="fa fa-expand text-primary"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="p-4">
+                                    <div class="relative bg-blue-50 rounded-lg overflow-hidden" style="height: 400px;">
+                                        <canvas id="simulation-canvas" class="w-full h-full"></canvas>
+                                        <div class="absolute bottom-4 right-4 bg-white p-2 rounded-md shadow-md">
+                                            <div class="flex items-center space-x-2 text-sm">
+                                                <span class="font-medium">Time:</span>
+                                                <span id="simulation-time">0.00 s</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="p-4 bg-gray-100 border-t">
+                                    <div class="flex flex-wrap gap-4">
+                                        <div class="flex-1 min-w-[200px]">
+                                            <label class="block text-sm font-medium text-gray-700 mb-1">Initial Velocity</label>
+                                            <div class="flex items-center space-x-2">
+                                                <input type="range" min="5" max="30" value="15" class="slider-track flex-1" id="velocity-slider">
+                                                <input type="number" min="5" max="30" value="15" class="w-16 px-2 py-1 border rounded text-center" id="velocity-input">
+                                                <span class="text-sm text-gray-600">m/s</span>
+                                            </div>
+                                        </div>
+                                        <div class="flex-1 min-w-[200px]">
+                                            <label class="block text-sm font-medium text-gray-700 mb-1">Launch Angle</label>
+                                            <div class="flex items-center space-x-2">
+                                                <input type="range" min="0" max="90" value="30" class="slider-track flex-1" id="angle-slider">
+                                                <input type="number" min="0" max="90" value="30" class="w-16 px-2 py-1 border rounded text-center" id="angle-input">
+                                                <span class="text-sm text-gray-600">°</span>
+                                            </div>
+                                        </div>
+                                        <div class="flex-1 min-w-[200px]">
+                                            <label class="block text-sm font-medium text-gray-700 mb-1">Initial Height</label>
+                                            <div class="flex items-center space-x-2">
+                                                <input type="range" min="0" max="50" value="10" class="slider-track flex-1" id="height-slider">
+                                                <input type="number" min="0" max="50" value="10" class="w-16 px-2 py-1 border rounded text-center" id="height-input">
+                                                <span class="text-sm text-gray-600">m</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Data Visualization -->
+                            <div class="bg-white rounded-xl shadow-lg mt-6">
+                                <div class="p-4 bg-gray-100 border-b">
+                                    <h2 class="text-lg font-semibold text-gray-800">Data Visualization</h2>
+                                </div>
+                                <div class="p-4">
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div>
+                                            <h3 class="text-sm font-medium text-gray-700 mb-2">Position vs. Time</h3>
+                                            <div class="bg-gray-50 rounded-lg p-2 h-48">
+                                                <canvas id="position-chart"></canvas>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <h3 class="text-sm font-medium text-gray-700 mb-2">Velocity vs. Time</h3>
+                                            <div class="bg-gray-50 rounded-lg p-2 h-48">
+                                                <canvas id="velocity-chart"></canvas>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+                                        <div class="bg-blue-50 p-3 rounded-lg">
+                                            <p class="text-sm text-gray-600">Time of Flight</p>
+                                            <p class="text-lg font-semibold text-primary" id="time-of-flight">2.04 s</p>
+                                        </div>
+                                        <div class="bg-blue-50 p-3 rounded-lg">
+                                            <p class="text-sm text-gray-600">Range</p>
+                                            <p class="text-lg font-semibold text-primary" id="range">26.8 m</p>
+                                        </div>
+                                        <div class="bg-blue-50 p-3 rounded-lg">
+                                            <p class="text-sm text-gray-600">Maximum Height</p>
+                                            <p class="text-lg font-semibold text-primary" id="max-height">12.8 m</p>
+                                        </div>
+                                        <div class="bg-blue-50 p-3 rounded-lg">
+                                            <p class="text-sm text-gray-600">Final Velocity</p>
+                                            <p class="text-lg font-semibold text-primary" id="final-velocity">18.1 m/s</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Teaching Panel -->
+                        <div class="lg:col-span-1">
+                            <div class="bg-white rounded-xl shadow-lg">
+                                <div class="p-4 bg-gray-100 border-b">
+                                    <h2 class="text-lg font-semibold text-gray-800">Teaching Resources</h2>
+                                </div>
+                                <div class="p-4">
+                                    <div class="mb-6">
+                                        <h3 class="text-md font-semibold text-gray-800 mb-2">Problem Statement</h3>
+                                        <div class="bg-gray-50 p-3 rounded-lg text-sm">
+                                            <p>A ball is thrown from the top of a 10-meter building with an initial velocity of 15 m/s at an angle of 30 degrees above the horizontal. Calculate the time of flight and the range of the projectile.</p>
+                                        </div>
+                                    </div>
+
+                                    <div class="mb-6">
+                                        <h3 class="text-md font-semibold text-gray-800 mb-2">Key Concepts</h3>
+                                        <ul class="list-disc list-inside text-sm space-y-1">
+                                            <li>Projectile motion</li>
+                                            <li>Horizontal and vertical components of velocity</li>
+                                            <li>Acceleration due to gravity</li>
+                                            <li>Time of flight calculation</li>
+                                            <li>Range calculation</li>
+                                        </ul>
+                                    </div>
+
+                                    <div class="mb-6">
+                                        <h3 class="text-md font-semibold text-gray-800 mb-2">Teaching Tips</h3>
+                                        <div class="bg-blue-50 p-3 rounded-lg text-sm">
+                                            <p><strong>Discussion Points:</strong></p>
+                                            <ul class="list-disc list-inside space-y-1 mt-1">
+                                                <li>How does changing the launch angle affect the range?</li>
+                                                <li>What happens to the time of flight if we double the initial velocity?</li>
+                                                <li>Why does the horizontal component of velocity remain constant?</li>
+                                            </ul>
+                                        </div>
+                                    </div>
+
+                                    <div class="mb-6">
+                                        <h3 class="text-md font-semibold text-gray-800 mb-2">Quiz Questions</h3>
+                                        <div class="space-y-3">
+                                            <div class="bg-gray-50 p-3 rounded-lg text-sm">
+                                                <p class="font-medium">1. What is the maximum range for a projectile launched from ground level?</p>
+                                                <div class="mt-1 space-y-1">
+                                                    <div class="flex items-center">
+                                                        <input type="radio" id="q1-a" name="q1" class="mr-2">
+                                                        <label for="q1-a" class="text-sm">30 degrees</label>
+                                                    </div>
+                                                    <div class="flex items-center">
+                                                        <input type="radio" id="q1-b" name="q1" class="mr-2">
+                                                        <label for="q1-b" class="text-sm">45 degrees</label>
+                                                    </div>
+                                                    <div class="flex items-center">
+                                                        <input type="radio" id="q1-c" name="q1" class="mr-2">
+                                                        <label for="q1-c" class="text-sm">60 degrees</label>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div class="bg-gray-50 p-3 rounded-lg text-sm">
+                                                <p class="font-medium">2. If air resistance is neglected, which component of velocity remains constant?</p>
+                                                <div class="mt-1 space-y-1">
+                                                    <div class="flex items-center">
+                                                        <input type="radio" id="q2-a" name="q2" class="mr-2">
+                                                        <label for="q2-a" class="text-sm">Horizontal component</label>
+                                                    </div>
+                                                    <div class="flex items-center">
+                                                        <input type="radio" id="q2-b" name="q2" class="mr-2">
+                                                        <label for="q2-b" class="text-sm">Vertical component</label>
+                                                    </div>
+                                                    <div class="flex items-center">
+                                                        <input type="radio" id="q2-c" name="q2" class="mr-2">
+                                                        <label for="q2-c" class="text-sm">Both components</label>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="flex flex-col space-y-3">
+                                        <button class="btn-primary" id="download-simulation">
+                                            <i class="fa fa-download mr-2"></i> Download Simulation
+                                        </button>
+                                        <button class="btn-outline" id="share-simulation">
+                                            <i class="fa fa-share-alt mr-2"></i> Share Link
+                                        </button>
+                                        <button class="btn-outline" id="edit-simulation">
+                                            <i class="fa fa-pencil mr-2"></i> Edit Parameters
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-gray-800 text-white py-8">
+        <div class="container mx-auto px-4">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+                <div>
+                    <h3 class="text-lg font-semibold mb-4">Physics Simulation Generator</h3>
+                    <p class="text-gray-400">Turn physics problems into interactive simulations for effective teaching and learning.</p>
+                </div>
+                <div>
+                    <h3 class="text-lg font-semibold mb-4">Quick Links</h3>
+                    <ul class="space-y-2">
+                        <li><a href="#" class="text-gray-400 hover:text-white transition-colors">Home</a></li>
+                        <li><a href="#" class="text-gray-400 hover:text-white transition-colors">Examples</a></li>
+                        <li><a href="#" class="text-gray-400 hover:text-white transition-colors">Help Center</a></li>
+                        <li><a href="#" class="text-gray-400 hover:text-white transition-colors">Contact Us</a></li>
+                    </ul>
+                </div>
+                <div>
+                    <h3 class="text-lg font-semibold mb-4">Connect With Us</h3>
+                    <div class="flex space-x-4">
+                        <a href="#" class="text-gray-400 hover:text-white transition-colors">
+                            <i class="fa fa-facebook"></i>
+                        </a>
+                        <a href="#" class="text-gray-400 hover:text-white transition-colors">
+                            <i class="fa fa-twitter"></i>
+                        </a>
+                        <a href="#" class="text-gray-400 hover:text-white transition-colors">
+                            <i class="fa fa-instagram"></i>
+                        </a>
+                        <a href="#" class="text-gray-400 hover:text-white transition-colors">
+                            <i class="fa fa-linkedin"></i>
+                        </a>
+                    </div>
+                </div>
+            </div>
+            <div class="border-t border-gray-700 mt-8 pt-6 text-center text-gray-400">
+                <p>&copy; 2025 Physics Simulation Generator. All rights reserved.</p>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Modals -->
+    <!-- Share Modal -->
+    <div class="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center hidden" id="share-modal">
+        <div class="bg-white rounded-xl shadow-xl p-6 max-w-md w-full mx-4">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xl font-bold text-gray-800">Share Simulation</h3>
+                <button class="text-gray-500 hover:text-gray-700 focus:outline-none" id="close-share-modal">
+                    <i class="fa fa-times"></i>
+                </button>
+            </div>
+            <div class="mb-4">
+                <label class="block text-gray-700 font-medium mb-2">Shareable Link</label>
+                <div class="flex">
+                    <input type="text" value="https://physics-simulation.com/simulation/abc123" class="input-field flex-1" readonly>
+                    <button class="btn-primary ml-2" id="copy-link">Copy</button>
+                </div>
+            </div>
+            <div class="mb-4">
+                <label class="block text-gray-700 font-medium mb-2">Or Share Via</label>
+                <div class="flex space-x-4 justify-center">
+                    <button class="bg-blue-600 text-white p-2 rounded-full w-10 h-10 flex items-center justify-center">
+                        <i class="fa fa-facebook"></i>
+                    </button>
+                    <button class="bg-blue-400 text-white p-2 rounded-full w-10 h-10 flex items-center justify-center">
+                        <i class="fa fa-twitter"></i>
+                    </button>
+                    <button class="bg-green-600 text-white p-2 rounded-full w-10 h-10 flex items-center justify-center">
+                        <i class="fa fa-whatsapp"></i>
+                    </button>
+                    <button class="bg-red-600 text-white p-2 rounded-full w-10 h-10 flex items-center justify-center">
+                        <i class="fa fa-envelope"></i>
+                    </button>
+                </div>
+            </div>
+            <button class="btn-outline w-full" id="close-share">Close</button>
+        </div>
+    </div>
+
+    <!-- Edit Parameters Modal -->
+    <div class="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center hidden" id="edit-modal">
+        <div class="bg-white rounded-xl shadow-xl p-6 max-w-lg w-full mx-4">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xl font-bold text-gray-800">Edit Simulation Parameters</h3>
+                <button class="text-gray-500 hover:text-gray-700 focus:outline-none" id="close-edit-modal">
+                    <i class="fa fa-times"></i>
+                </button>
+            </div>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-gray-700 font-medium mb-2">Simulation Type</label>
+                    <select class="input-field">
+                        <option>Projectile Motion</option>
+                        <option>Pendulum</option>
+                        <option>Circuit</option>
+                        <option>Waves</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-gray-700 font-medium mb-2">Gravity (m/s²)</label>
+                    <input type="number" value="9.8" class="input-field">
+                </div>
+                <div>
+                    <label class="block text-gray-700 font-medium mb-2">Air Resistance</label>
+                    <div class="flex items-center">
+                        <input type="checkbox" id="air-resistance" class="h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded">
+                        <label for="air-resistance" class="ml-2 block text-gray-700">Enable air resistance</label>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-gray-700 font-medium mb-2">Visual Style</label>
+                    <div class="grid grid-cols-3 gap-2">
+                        <div class="border border-primary rounded-lg p-2 text-center bg-blue-50 cursor-pointer">
+                            <p class="text-sm font-medium text-primary">Realistic</p>
+                        </div>
+                        <div class="border border-gray-200 rounded-lg p-2 text-center cursor-pointer hover:bg-gray-50">
+                            <p class="text-sm font-medium text-gray-700">Minimal</p>
+                        </div>
+                        <div class="border border-gray-200 rounded-lg p-2 text-center cursor-pointer hover:bg-gray-50">
+                            <p class="text-sm font-medium text-gray-700">Cartoon</p>
+                        </div>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-gray-700 font-medium mb-2">Display Options</label>
+                    <div class="grid grid-cols-2 gap-2">
+                        <div class="flex items-center">
+                            <input type="checkbox" id="show-trajectory" checked class="h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded">
+                            <label for="show-trajectory" class="ml-2 block text-sm text-gray-700">Show Trajectory</label>
+                        </div>
+                        <div class="flex items-center">
+                            <input type="checkbox" id="show-vectors" checked class="h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded">
+                            <label for="show-vectors" class="ml-2 block text-sm text-gray-700">Show Vectors</label>
+                        </div>
+                        <div class="flex items-center">
+                            <input type="checkbox" id="show-grid" class="h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded">
+                            <label for="show-grid" class="ml-2 block text-sm text-gray-700">Show Grid</label>
+                        </div>
+                        <div class="flex items-center">
+                            <input type="checkbox" id="show-measurements" checked class="h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded">
+                            <label for="show-measurements" class="ml-2 block text-sm text-gray-700">Show Measurements</label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="flex space-x-3 mt-6">
+                <button class="btn-outline flex-1" id="cancel-edit">Cancel</button>
+                <button class="btn-primary flex-1" id="apply-changes">Apply Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript -->
+    <script>
+        // DOM Elements
+        const mobileMenuButton = document.getElementById('mobile-menu-button');
+        const mobileMenu = document.getElementById('mobile-menu');
+        const pages = document.querySelectorAll('.page');
+        const inputPage = document.getElementById('input-page');
+        const progressPage = document.getElementById('progress-page');
+        const simulationPage = document.getElementById('simulation-page');
+        const generateSimulationBtn = document.getElementById('generate-simulation');
+        const backToInputBtn = document.getElementById('back-to-input');
+        const viewSimulationBtn = document.getElementById('view-simulation');
+        const browseFilesBtn = document.getElementById('browse-files');
+        const fileUpload = document.getElementById('file-upload');
+        const uploadArea = document.getElementById('upload-area');
+        const shareSimulationBtn = document.getElementById('share-simulation');
+        const shareModal = document.getElementById('share-modal');
+        const closeShareModalBtn = document.getElementById('close-share-modal');
+        const closeShareBtn = document.getElementById('close-share');
+        const copyLinkBtn = document.getElementById('copy-link');
+        const editSimulationBtn = document.getElementById('edit-simulation');
+        const editModal = document.getElementById('edit-modal');
+        const closeEditModalBtn = document.getElementById('close-edit-modal');
+        const cancelEditBtn = document.getElementById('cancel-edit');
+        const applyChangesBtn = document.getElementById('apply-changes');
+        const playPauseBtn = document.getElementById('play-pause');
+        const resetSimulationBtn = document.getElementById('reset-simulation');
+        const fullscreenBtn = document.getElementById('fullscreen');
+        const velocitySlider = document.getElementById('velocity-slider');
+        const velocityInput = document.getElementById('velocity-input');
+        const angleSlider = document.getElementById('angle-slider');
+        const angleInput = document.getElementById('angle-input');
+        const heightSlider = document.getElementById('height-slider');
+        const heightInput = document.getElementById('height-input');
+        const simulationCanvas = document.getElementById('simulation-canvas');
+        const ctx = simulationCanvas.getContext('2d');
+
+        // Navigation
+        mobileMenuButton.addEventListener('click', () => {
+            mobileMenu.classList.toggle('hidden');
+        });
+
+        // Page Navigation
+        function showPage(pageId) {
+            pages.forEach(page => {
+                page.classList.add('hidden');
+            });
+            document.getElementById(pageId).classList.remove('hidden');
+        }
+
+        // Generate Simulation Button
+        generateSimulationBtn.addEventListener('click', () => {
+            showPage('progress-page');
+            simulateProgress();
+        });
+
+        // Back to Input Button
+        backToInputBtn.addEventListener('click', () => {
+            showPage('input-page');
+        });
+
+        // View Simulation Button
+        viewSimulationBtn.addEventListener('click', () => {
+            showPage('simulation-page');
+            initSimulation();
+        });
+
+        // File Upload
+        browseFilesBtn.addEventListener('click', () => {
+            fileUpload.click();
+        });
+
+        fileUpload.addEventListener('change', () => {
+            if (fileUpload.files.length > 0) {
+                uploadArea.classList.add('border-primary');
+                uploadArea.innerHTML = `
+                    <i class="fa fa-file-text-o text-4xl text-primary mb-2"></i>
+                    <p class="text-gray-700 mb-2">${fileUpload.files[0].name}</p>
+                    <p class="text-xs text-gray-400">Click to change or drag another file</p>
+                `;
+            }
+        });
+
+        // Drag and Drop
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            uploadArea.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            uploadArea.addEventListener(eventName, highlight, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            uploadArea.addEventListener(eventName, unhighlight, false);
+        });
+
+        function highlight() {
+            uploadArea.classList.add('border-primary', 'bg-blue-50');
+        }
+
+        function unhighlight() {
+            uploadArea.classList.remove('border-primary', 'bg-blue-50');
+        }
+
+        uploadArea.addEventListener('drop', handleDrop, false);
+
+        function handleDrop(e) {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            if (files.length > 0) {
+                uploadArea.classList.add('border-primary');
+                uploadArea.innerHTML = `
+                    <i class="fa fa-file-text-o text-4xl text-primary mb-2"></i>
+                    <p class="text-gray-700 mb-2">${files[0].name}</p>
+                    <p class="text-xs text-gray-400">Click to change or drag another file</p>
+                `;
+            }
+        }
+
+        // Share Modal
+        shareSimulationBtn.addEventListener('click', () => {
+            shareModal.classList.remove('hidden');
+        });
+
+        closeShareModalBtn.addEventListener('click', () => {
+            shareModal.classList.add('hidden');
+        });
+
+        closeShareBtn.addEventListener('click', () => {
+            shareModal.classList.add('hidden');
+        });
+
+        copyLinkBtn.addEventListener('click', () => {
+            const linkInput = shareModal.querySelector('input');
+            linkInput.select();
+            document.execCommand('copy');
+            copyLinkBtn.textContent = 'Copied!';
+            setTimeout(() => {
+                copyLinkBtn.innerHTML = 'Copy';
+            }, 2000);
+        });
+
+        // Edit Modal
+        editSimulationBtn.addEventListener('click', () => {
+            editModal.classList.remove('hidden');
+        });
+
+        closeEditModalBtn.addEventListener('click', () => {
+            editModal.classList.add('hidden');
+        });
+
+        cancelEditBtn.addEventListener('click', () => {
+            editModal.classList.add('hidden');
+        });
+
+        applyChangesBtn.addEventListener('click', () => {
+            editModal.classList.add('hidden');
+            // Apply changes to simulation
+            alert('Changes applied successfully!');
+        });
+
+        // Slider and Input Sync
+        velocitySlider.addEventListener('input', () => {
+            velocityInput.value = velocitySlider.value;
+            updateSimulation();
+        });
+
+        velocityInput.addEventListener('change', () => {
+            velocitySlider.value = velocityInput.value;
+            updateSimulation();
+        });
+
+        angleSlider.addEventListener('input', () => {
+            angleInput.value = angleSlider.value;
+            updateSimulation();
+        });
+
+        angleInput.addEventListener('change', () => {
+            angleSlider.value = angleInput.value;
+            updateSimulation();
+        });
+
+        heightSlider.addEventListener('input', () => {
+            heightInput.value = heightSlider.value;
+            updateSimulation();
+        });
+
+        heightInput.addEventListener('change', () => {
+            heightSlider.value = heightInput.value;
+            updateSimulation();
+        });
+
+        // Simulation Controls
+        let isPlaying = false;
+        playPauseBtn.addEventListener('click', () => {
+            isPlaying = !isPlaying;
+            if (isPlaying) {
+                playPauseBtn.innerHTML = '<i class="fa fa-pause text-primary"></i>';
+                animate();
+            } else {
+                playPauseBtn.innerHTML = '<i class="fa fa-play text-primary"></i>';
+            }
+        });
+
+        resetSimulationBtn.addEventListener('click', () => {
+            resetSimulation();
+        });
+
+        fullscreenBtn.addEventListener('click', () => {
+            const simulationContainer = document.querySelector('.bg-blue-50');
+            if (simulationContainer.requestFullscreen) {
+                simulationContainer.requestFullscreen();
+            } else if (simulationContainer.mozRequestFullScreen) {
+                simulationContainer.mozRequestFullScreen();
+            } else if (simulationContainer.webkitRequestFullscreen) {
+                simulationContainer.webkitRequestFullscreen();
+            } else if (simulationContainer.msRequestFullscreen) {
+                simulationContainer.msRequestFullscreen();
+            }
+        });
+
+        // Progress Simulation
+        function simulateProgress() {
+            const steps = ['step-1', 'step-2', 'step-3', 'step-4'];
+            const progressBars = ['progress-bar-1', 'progress-bar-2', 'progress-bar-3'];
+            const stepTitles = [
+                'Analyzing Problem',
+                'Extracting Model',
+                'Designing Interaction',
+                'Generating Simulation'
+            ];
+            const stepDescriptions = [
+                "We're analyzing your physics problem to identify key concepts and parameters. This helps us understand what type of simulation would be most appropriate.",
+                "We're creating a mathematical model based on the physics principles identified in your problem. This model will be used to calculate the motion of the projectile.",
+                "We're designing the user interface and interactive elements for your simulation. This includes sliders, buttons, and visual feedback for parameter changes.",
+                "We're finalizing your simulation by integrating the mathematical model with the user interface. The simulation is almost ready for you to explore and use in your teaching."
+            ];
+            const findings = [
+                [
+                    "Identified as a projectile motion problem",
+                    "Key parameters: initial velocity, angle, height",
+                    "Calculating time of flight and range"
+                ],
+                [
+                    "Created mathematical model for projectile motion",
+                    "Incorporated equations for horizontal and vertical motion",
+                    "Set up boundary conditions for the simulation"
+                ],
+                [
+                    "Designed parameter controls for velocity, angle, and height",
+                    "Added real-time data visualization",
+                    "Implemented interactive elements for teaching"
+                ],
+                [
+                    "Integrated mathematical model with user interface",
+                    "Added teaching resources and quiz questions",
+                    "Simulation is ready for use in your classroom"
+                ]
+            ];
+
+            let currentStep = 0;
+            const currentStepTitle = document.getElementById('current-step-title');
+            const currentStepDescription = document.getElementById('current-step-description');
+            const currentFindings = document.getElementById('current-findings');
+
+            function updateStep(stepIndex) {
+                // Update active step
+                steps.forEach((step, index) => {
+                    const stepElement = document.getElementById(step);
+                    if (index < stepIndex) {
+                        stepElement.classList.remove('active');
+                        stepElement.classList.add('completed');
+                        stepElement.querySelector('h3').classList.remove('text-primary');
+                        stepElement.querySelector('h3').classList.add('text-green-500');
+                    } else if (index === stepIndex) {
+                        stepElement.classList.add('active');
+                        stepElement.classList.remove('completed');
+                        stepElement.querySelector('h3').classList.add('text-primary');
+                        stepElement.querySelector('h3').classList.remove('text-green-500');
+                    } else {
+                        stepElement.classList.remove('active', 'completed');
+                        stepElement.querySelector('h3').classList.remove('text-primary', 'text-green-500');
+                        stepElement.querySelector('h3').classList.add('text-gray-500');
+                    }
+                });
+
+                // Update progress bars
+                progressBars.forEach((bar, index) => {
+                    const barElement = document.getElementById(bar);
+                    if (index < stepIndex) {
+                        barElement.style.width = '100%';
+                    } else if (index === stepIndex) {
+                        barElement.style.width = '50%';
+                    } else {
+                        barElement.style.width = '0%';
+                    }
+                });
+
+                // Update step content
+                currentStepTitle.textContent = stepTitles[stepIndex];
+                currentStepDescription.textContent = stepDescriptions[stepIndex];
+                
+                // Update findings
+                currentFindings.innerHTML = '';
+                findings[stepIndex].forEach(finding => {
+                    const li = document.createElement('li');
+                    li.textContent = finding;
+                    currentFindings.appendChild(li);
+                });
+
+                // Enable view simulation button on last step
+                if (stepIndex === steps.length - 1) {
+                    viewSimulationBtn.disabled = false;
+                    progressBars.forEach(bar => {
+                        document.getElementById(bar).style.width = '100%';
+                    });
+                }
+            }
+
+            // Initial step
+            updateStep(currentStep);
+
+            // Progress to next steps
+            const interval = setInterval(() => {
+                currentStep++;
+                if (currentStep >= steps.length) {
+                    clearInterval(interval);
+                    return;
+                }
+                updateStep(currentStep);
+            }, 3000);
+        }
+
+        // Simulation Canvas
+        function initSimulation() {
+            // Set canvas dimensions
+            const container = simulationCanvas.parentElement;
+            simulationCanvas.width = container.clientWidth;
+            simulationCanvas.height = container.clientHeight;
+
+            // Initialize simulation
+            resetSimulation();
+        }
+
+        let simulationTime = 0;
+        let projectile = {
+            x: 0,
+            y: 0,
+            vx: 0,
+            vy: 0,
+            trail: []
+        };
+        let animationId;
+
+        function resetSimulation() {
+            // Stop animation
+            isPlaying = false;
+            playPauseBtn.innerHTML = '<i class="fa fa-play text-primary"></i>';
+            cancelAnimationFrame(animationId);
+
+            // Reset simulation time
+            simulationTime = 0;
+            document.getElementById('simulation-time').textContent = '0.00 s';
+
+            // Get parameters
+            const v0 = parseFloat(velocitySlider.value);
+            const angle = parseFloat(angleSlider.value) * Math.PI / 180;
+            const h0 = parseFloat(heightSlider.value);
+
+            // Set initial conditions
+            projectile.x = 50;
+            projectile.y = simulationCanvas.height - 50 - h0 * 5; // Scale height
+            projectile.vx = v0 * Math.cos(angle) * 5; // Scale velocity
+            projectile.vy = -v0 * Math.sin(angle) * 5; // Negative because y increases downward
+            projectile.trail = [];
+
+            // Calculate and display results
+            calculateResults(v0, angle, h0);
+
+            // Draw initial state
+            draw();
+        }
+
+        function updateSimulation() {
+            // Get parameters
+            const v0 = parseFloat(velocitySlider.value);
+            const angle = parseFloat(angleSlider.value) * Math.PI / 180;
+            const h0 = parseFloat(heightSlider.value);
+
+            // Update initial velocity
+            projectile.vx = v0 * Math.cos(angle) * 5;
+            projectile.vy = -v0 * Math.sin(angle) * 5;
+
+            // Recalculate results
+            calculateResults(v0, angle, h0);
+
+            // Redraw
+            draw();
+        }
+
+        function animate() {
+            if (!isPlaying) return;
+
+            // Update time
+            simulationTime += 0.02;
+            document.getElementById('simulation-time').textContent = simulationTime.toFixed(2) + ' s';
+
+            // Update projectile position
+            projectile.trail.push({x: projectile.x, y: projectile.y});
+            if (projectile.trail.length > 100) {
+                projectile.trail.shift();
+            }
+
+            projectile.x += projectile.vx * 0.02;
+            projectile.y += projectile.vy * 0.02 + 0.5 * 9.8 * 5 * 0.02 * 0.02; // Gravity
+
+            // Update velocity (only y-component changes due to gravity)
+            projectile.vy += 9.8 * 5 * 0.02; // Gravity
+
+            // Check if projectile hit the ground
+            if (projectile.y >= simulationCanvas.height - 50) {
+                projectile.y = simulationCanvas.height - 50;
+                isPlaying = false;
+                playPauseBtn.innerHTML = '<i class="fa fa-play text-primary"></i>';
+            }
+
+            // Draw
+            draw();
+
+            // Continue animation
+            animationId = requestAnimationFrame(animate);
+        }
+
+        function draw() {
+            // Clear canvas
+            ctx.clearRect(0, 0, simulationCanvas.width, simulationCanvas.height);
+
+            // Draw ground
+            ctx.fillStyle = '#8D6E63';
+            ctx.fillRect(0, simulationCanvas.height - 50, simulationCanvas.width, 50);
+
+            // Draw building
+            const h0 = parseFloat(heightSlider.value);
+            ctx.fillStyle = '#78909C';
+            ctx.fillRect(0, simulationCanvas.height - 50 - h0 * 5, 50, h0 * 5);
+
+            // Draw trajectory
+            if (projectile.trail.length > 1) {
+                ctx.beginPath();
+                ctx.moveTo(projectile.trail[0].x, projectile.trail[0].y);
+                for (let i = 1; i < projectile.trail.length; i++) {
+                    ctx.lineTo(projectile.trail[i].x, projectile.trail[i].y);
+                }
+                ctx.strokeStyle = 'rgba(30, 136, 229, 0.5)';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            }
+
+            // Draw projectile
+            ctx.beginPath();
+            ctx.arc(projectile.x, projectile.y, 10, 0, Math.PI * 2);
+            ctx.fillStyle = '#FF9800';
+            ctx.fill();
+            ctx.strokeStyle = '#E65100';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // Draw velocity vector
+            const vScale = 2;
+            ctx.beginPath();
+            ctx.moveTo(projectile.x, projectile.y);
+            ctx.lineTo(projectile.x + projectile.vx * vScale, projectile.y + projectile.vy * vScale);
+            ctx.strokeStyle = '#4CAF50';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+
+            // Draw velocity vector arrow
+            const angle = Math.atan2(projectile.vy, projectile.vx);
+            ctx.beginPath();
+            ctx.moveTo(projectile.x + projectile.vx * vScale, projectile.y + projectile.vy * vScale);
+            ctx.lineTo(
+                projectile.x + projectile.vx * vScale - 10 * Math.cos(angle - Math.PI / 6),
+                projectile.y + projectile.vy * vScale - 10 * Math.sin(angle - Math.PI / 6)
+            );
+            ctx.lineTo(
+                projectile.x + projectile.vx * vScale - 10 * Math.cos(angle + Math.PI / 6),
+                projectile.y + projectile.vy * vScale - 10 * Math.sin(angle + Math.PI / 6)
+            );
+            ctx.closePath();
+            ctx.fillStyle = '#4CAF50';
+            ctx.fill();
+
+            // Draw axes labels
+            ctx.fillStyle = '#333';
+            ctx.font = '14px Arial';
+            ctx.fillText('x (m)', simulationCanvas.width - 50, simulationCanvas.height - 20);
+            ctx.save();
+            ctx.translate(20, 50);
+            ctx.rotate(-Math.PI / 2);
+            ctx.fillText('y (m)', 0, 0);
+            ctx.restore();
+
+            // Draw grid
+            ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
+            ctx.lineWidth = 1;
+            
+            // Vertical lines
+            for (let x = 100; x < simulationCanvas.width; x += 50) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, simulationCanvas.height - 50);
+                ctx.stroke();
+                
+                // x-axis labels
+                if (x % 100 === 0) {
+                    ctx.fillStyle = '#333';
+                    ctx.fillText((x/50).toString(), x - 5, simulationCanvas.height - 30);
+                }
+            }
+            
+            // Horizontal lines
+            for (let y = 50; y < simulationCanvas.height - 50; y += 50) {
+                ctx.beginPath();
+                ctx.moveTo(50, y);
+                ctx.lineTo(simulationCanvas.width, y);
+                ctx.stroke();
+                
+                // y-axis labels
+                if (y % 100 === 50) {
+                    ctx.fillStyle = '#333';
+                    ctx.fillText(((simulationCanvas.height - 50 - y)/5).toString(), 10, y + 5);
+                }
+            }
+        }
+
+        function calculateResults(v0, angle, h0) {
+            // Convert angle to radians
+            const angleRad = angle * Math.PI / 180;
+            
+            // Calculate components of velocity
+            const vx0 = v0 * Math.cos(angleRad);
+            const vy0 = v0 * Math.sin(angleRad);
+            
+            // Calculate time of flight (time to reach ground)
+            // Using the quadratic formula: t = [-b ± sqrt(b^2 + 4ac)] / 2a
+            // where a = 0.5 * g, b = vy0, c = h0
+            const g = 9.8;
+            const a = 0.5 * g;
+            const b = vy0;
+            const c = h0;
+            const discriminant = b * b + 4 * a * c;
+            const timeOfFlight = (-b + Math.sqrt(discriminant)) / (2 * a);
+            
+            // Calculate range (horizontal distance)
+            const range = vx0 * timeOfFlight;
+            
+            // Calculate maximum height
+            const maxHeight = h0 + (vy0 * vy0) / (2 * g);
+            
+            // Calculate final velocity
+            const vx = vx0; // Horizontal component remains constant
+            const vy = vy0 - g * timeOfFlight; // Vertical component
+            const finalVelocity = Math.sqrt(vx * vx + vy * vy);
+            
+            // Update display
+            document.getElementById('time-of-flight').textContent = timeOfFlight.toFixed(2) + ' s';
+            document.getElementById('range').textContent = range.toFixed(1) + ' m';
+            document.getElementById('max-height').textContent = maxHeight.toFixed(1) + ' m';
+            document.getElementById('final-velocity').textContent = finalVelocity.toFixed(1) + ' m/s';
+            
+            // Update charts
+            updateCharts(v0, angleRad, h0, timeOfFlight);
+        }
+
+        // Charts
+        let positionChart, velocityChart;
+
+        function updateCharts(v0, angle, h0, timeOfFlight) {
+            const g = 9.8;
+            const vx0 = v0 * Math.cos(angle);
+            const vy0 = v0 * Math.sin(angle);
+            
+            // Time points
+            const timePoints = [];
+            const xPoints = [];
+            const yPoints = [];
+            const vxPoints = [];
+            const vyPoints = [];
+            
+            // Generate data points
+            const step = timeOfFlight / 50;
+            for (let t = 0; t <= timeOfFlight; t += step) {
+                timePoints.push(t);
+                xPoints.push(vx0 * t);
+                yPoints.push(h0 + vy0 * t - 0.5 * g * t * t);
+                vxPoints.push(vx0); // Constant
+                vyPoints.push(vy0 - g * t); // Changes with time
+            }
+            
+            // Position Chart
+            const positionCtx = document.getElementById('position-chart').getContext('2d');
+            if (positionChart) positionChart.destroy();
+            
+            positionChart = new Chart(positionCtx, {
+                type: 'line',
+                data: {
+                    labels: timePoints,
+                    datasets: [
+                        {
+                            label: 'x (m)',
+                            data: xPoints,
+                            borderColor: '#1e88e5',
+                            backgroundColor: 'rgba(30, 136, 229, 0.1)',
+                            tension: 0.1,
+                            fill: false
+                        },
+                        {
+                            label: 'y (m)',
+                            data: yPoints,
+                            borderColor: '#ff9800',
+                            backgroundColor: 'rgba(255, 152, 0, 0.1)',
+                            tension: 0.1,
+                            fill: false
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Time (s)'
+                            }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: 'Position (m)'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                        }
+                    }
+                }
+            });
+            
+            // Velocity Chart
+            const velocityCtx = document.getElementById('velocity-chart').getContext('2d');
+            if (velocityChart) velocityChart.destroy();
+            
+            velocityChart = new Chart(velocityCtx, {
+                type: 'line',
+                data: {
+                    labels: timePoints,
+                    datasets: [
+                        {
+                            label: 'vₓ (m/s)',
+                            data: vxPoints,
+                            borderColor: '#1e88e5',
+                            backgroundColor: 'rgba(30, 136, 229, 0.1)',
+                            tension: 0.1,
+                            fill: false
+                        },
+                        {
+                            label: 'vᵧ (m/s)',
+                            data: vyPoints,
+                            borderColor: '#ff9800',
+                            backgroundColor: 'rgba(255, 152, 0, 0.1)',
+                            tension: 0.1,
+                            fill: false
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Time (s)'
+                            }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: 'Velocity (m/s)'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                        }
+                    }
+                }
+            });
+        }
+
+        // Navigation Event Listeners
+        document.getElementById('nav-home').addEventListener('click', (e) => {
+            e.preventDefault();
+            showPage('input-page');
+        });
+
+        document.getElementById('mobile-nav-home').addEventListener('click', (e) => {
+            e.preventDefault();
+            mobileMenu.classList.add('hidden');
+            showPage('input-page');
+        });
+
+        document.getElementById('nav-create').addEventListener('click', (e) => {
+            e.preventDefault();
+            showPage('input-page');
+        });
+
+        document.getElementById('mobile-nav-create').addEventListener('click', (e) => {
+            e.preventDefault();
+            mobileMenu.classList.add('hidden');
+            showPage('input-page');
+        });
+
+        // Example Problem
+        document.getElementById('problem-description').value = "A ball is thrown from the top of a 10-meter building with an initial velocity of 15 m/s at an angle of 30 degrees above the horizontal. Calculate the time of flight and the range of the projectile.";
+
+        // Initialize
+        window.addEventListener('resize', () => {
+            if (!simulationPage.classList.contains('hidden')) {
+                initSimulation();
+            }
+        });
+    </script>
+</body>
+</html>

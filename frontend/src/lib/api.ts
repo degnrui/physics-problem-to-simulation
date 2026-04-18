@@ -1,4 +1,12 @@
-const API_BASE = "http://127.0.0.1:8000/api";
+export function resolveApiBase() {
+  const configuredBase = import.meta.env.VITE_API_BASE;
+  if (configuredBase && typeof configuredBase === "string") {
+    return configuredBase.replace(/\/$/, "");
+  }
+  return "/api";
+}
+
+const API_BASE = resolveApiBase();
 
 export interface RunStep {
   id: string;

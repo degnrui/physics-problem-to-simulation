@@ -1,42 +1,14 @@
-# Findings & Decisions
+# Findings
 
-## Requirements
-- The new project must live in its own standalone repository.
-- The repository name is `physics-problem-to-simulation`.
-- The first task is to build a clear skeleton before deeper implementation.
-- The project should be easy to identify and continue later without confusion with the existing circuit-simulation repository.
+## 2026-04-18
 
-## Research Findings
-- The current repository already contains a useful concept split: `scene`, `state`, `simulation`, and `physics`.
-- A direct “problem text -> arbitrary simulation code” path is likely too unstable for a first version.
-- A more robust first architecture is: `problem -> structured model -> simulation scene -> solver/renderer`.
-- A standalone scaffold benefits from separating `backend`, `frontend`, and `shared` contracts before deeper implementation starts.
-- The new repository is now initialized locally on branch `main` with a clean initial commit.
-
-## Technical Decisions
-| Decision | Rationale |
-|----------|-----------|
-| Create planning files in the new repository root | Gives us persistent working memory and easier recovery |
-| Separate product scaffold from the existing Figure 1 codebase | Prevents architecture drift and mixed responsibilities |
-| Aim first for a scaffold that can support parser/model/scene modules | Matches the intended long-term pipeline |
-| Keep the first sample centered on a dynamic-circuit problem | Reuses the most grounded domain intuition from the earlier project without copying its code structure directly |
-| Prepare GitHub sync after local initialization | Keeps project bootstrapping independent from external tooling availability |
-
-## Issues Encountered
-| Issue | Resolution |
-|-------|------------|
-| The planning-with-files skill path under `superpowers` was invalid in this environment | Located the correct skill under `/Users/dengrui/.codex/skills/planning-with-files/SKILL.md` |
-| The new repository directory needed to be created outside the current writable root | Used an escalated command to create the sibling repository directory |
-| The new scaffold could not write nested files until the directory tree existed | Created the directory tree first, then wrote scaffold files |
-| The first commit hit a stale git lock file | Removed `.git/index.lock` and resumed the normal commit flow |
-| Parallel git commands can race on `.git/index.lock` in this environment | Use sequential add/commit operations for repository initialization |
-| `gh` is not installed on this machine | GitHub remote creation/push cannot be completed automatically with GitHub CLI right now |
-
-## Resources
-- New repository root: `/Users/dengrui/Documents/工作/智能体搭建/physics-problem-to-simulation`
-- Existing project root: `/Users/dengrui/Documents/工作/智能体搭建/真实情境到simulation`
-- Implementation plan: `/Users/dengrui/Documents/工作/智能体搭建/physics-problem-to-simulation/docs/plans/2026-04-14-scaffold-design.md`
-- Initial commit: `a7a8d68 chore: initialize project scaffold`
-
-## Visual/Browser Findings
-- None yet.
+- `frontend/src/App.tsx` currently uses route split: `/` for launcher and `/simulation/:id` for workspace.
+- Existing homepage already mixes creation and recent runs, but not as a collapsible conversation system.
+- Existing workspace uses a left stage rail and a right status panel; this directly conflicts with the requested shell where the left side is only conversation management.
+- Current generation view is a persistent multi-step rail, not a single-task transition player.
+- Current result view centers the simulation and places artifacts in an inspector; requested result view instead centers conversation content and keeps runtime in a closable right preview panel.
+- API surface is sufficient for a first pass: run creation, list, polling status, fetch result, export HTML.
+- `.impeccable.md` confirms teacher-facing, light theme, professional education product direction.
+- The new frontend maps backend `run` items to conversations and persists per-conversation UI state in local storage.
+- Runtime versions are currently frontend-managed snapshots: initial generation creates `V1`, and follow-up prompts or inline edits append later versions.
+- The runtime itself is now a dedicated studio component instead of the previous inspector-centric workspace layout.

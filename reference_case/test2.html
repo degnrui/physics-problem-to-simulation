@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>物理模拟：定速投篮问题</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        canvas { touch-action: none; }
+        /* 自定义滑块样式 */
+        .slider-thumb::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            background: #3b82f6;
+            cursor: pointer;
+            border-radius: 50%;
+            margin-top: -6px; 
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        }
+        .slider-track::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px;
+            cursor: pointer;
+            background: #e5e7eb;
+            border-radius: 2px;
+        }
+        /* 时间滑块特定样式 */
+        #input-time::-webkit-slider-thumb {
+            background: #ef4444; /* 红色滑块 */
+            width: 20px;
+            height: 20px;
+            margin-top: -8px;
+            border: 2px solid white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+        }
+        .data-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.5rem;
+            padding: 0.35rem 0;
+            border-bottom: 1px solid #f3f4f6;
+            align-items: center;
+        }
+        .data-label { font-size: 0.8rem; color: #4b5563; }
+        .data-val { font-family: 'Menlo', 'Monaco', monospace; font-weight: 600; font-size: 0.9rem; text-align: right; }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800 h-screen flex flex-col overflow-hidden">
+
+    <!-- 顶部标题 -->
+    <header class="bg-white shadow-sm p-3 z-10 flex-shrink-0">
+        <div class="max-w-7xl mx-auto flex justify-between items-center">
+            <div class="flex items-center gap-4">
+                <h1 class="text-lg md:text-xl font-bold text-blue-600">物理探究：斜抛运动能量与轨迹</h1>
+                <span class="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded hidden sm:inline-block">忽略空气阻力</span>
+            </div>
+            <div class="flex space-x-2">
+                <button id="btn-reset" class="px-3 py-1.5 bg-gray-200 hover:bg-gray-300 rounded text-sm font-medium transition">重置</button>
+                <button id="btn-shoot" class="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm font-medium transition shadow flex items-center gap-2 w-28 justify-center">
+                    投篮
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- 主内容区 -->
+    <main class="flex-1 flex flex-col lg:flex-row h-full overflow-hidden">
+        
+        <!-- 左侧：Canvas 模拟区 -->
+        <div class="flex-1 flex flex-col relative bg-slate-100 border-r border-gray-200 overflow-hidden">
+            <!-- 画布 -->
+            <div class="flex-1 relative" id="canvas-container">
+                <canvas id="simCanvas" class="w-full h-full block cursor-crosshair"></canvas>
+                
+                <!-- 状态浮窗 -->
+                <div class="absolute top-4 left-4 bg-white/90 backdrop-blur px-3 py-2 rounded-lg shadow border border-gray-200 pointer-events-none select-none">
+                     <span id="status-msg" class="text-sm font-medium text-gray-600">模拟进行中...</span>
+                </div>
+            </div>
+
+            <!-- 底部：时间轴控制 -->
+            <div class="h-20 bg-white border-t border-gray-200 px-4 flex items-center gap-4 flex-shrink-0 z-20">
+                <button id="btn-play-pause-sm" class="w-10 h-10 flex items-center justify-center rounded-full bg-gray-100 text-gray-600 hover:text-blue-600 hover:bg-blue-50 focus:outline-none transition">
+                    <svg id="icon-play" class="w-6 h-6 hidden" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd" /></svg>
+                    <svg id="icon-pause" class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" /></svg>
+                </button>
+                <div class="flex-1 flex flex-col justify-center">
+                    <div class="flex justify-between text-xs text-gray-500 mb-1">
+                        <span class="font-medium">播放进度 / 暂停拖拽</span>
+                        <span id="time-display" class="font-mono bg-gray-100 px-2 py-0.5 rounded">t = 0.00s</span>
+                    </div>
+                    <input type="range" id="input-time" min="0" max="100" step="0.05" value="0" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider-track">
+                </div>
+            </div>
+        </div>
+
+        <!-- 右侧：控制与数据面板 -->
+        <div class="w-full lg:w-96 bg-white shadow-xl z-30 overflow-y-auto flex flex-col border-l border-gray-200">
+            
+            <!-- 1. 参数设置 -->
+            <div class="p-5 border-b border-gray-100 bg-white">
+                <h3 class="font-bold text-gray-800 mb-4 flex items-center gap-2 text-sm uppercase tracking-wider">
+                    <svg class="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path></svg>
+                    初始条件设置
+                </h3>
+                
+                <div class="space-y-5">
+                    <!-- v0 -->
+                    <div>
+                        <div class="flex justify-between text-sm mb-1">
+                            <label class="font-medium text-gray-700">初速率 $v_0$</label>
+                            <span class="text-blue-600 font-mono font-bold" id="val-v0">10.5 m/s</span>
+                        </div>
+                        <input type="range" id="input-v0" min="5" max="15" step="0.1" value="10.5" class="w-full h-1.5 bg-blue-100 rounded-lg appearance-none cursor-pointer slider-thumb">
+                    </div>
+
+                    <!-- d1 -->
+                    <div>
+                        <div class="flex justify-between text-sm mb-1">
+                            <label class="font-medium text-red-600">距离 A (近)</label>
+                            <span class="font-mono text-gray-600" id="val-d1">4.0 m</span>
+                        </div>
+                        <input type="range" id="input-d1" min="1" max="9" step="0.5" value="4.0" class="w-full h-1.5 bg-red-100 rounded-lg appearance-none cursor-pointer slider-thumb accent-red-500">
+                    </div>
+
+                    <!-- d2 -->
+                    <div>
+                        <div class="flex justify-between text-sm mb-1">
+                            <label class="font-medium text-blue-600">距离 B (远)</label>
+                            <span class="font-mono text-gray-600" id="val-d2">7.0 m</span>
+                        </div>
+                        <input type="range" id="input-d2" min="1" max="9" step="0.5" value="7.0" class="w-full h-1.5 bg-blue-100 rounded-lg appearance-none cursor-pointer slider-thumb accent-blue-500">
+                    </div>
+
+                     <!-- h -->
+                     <div>
+                        <div class="flex justify-between text-sm mb-1">
+                            <label class="font-medium text-gray-700">出手高度 $h$</label>
+                            <span class="font-mono text-gray-600" id="val-h">2.0 m</span>
+                        </div>
+                        <input type="range" id="input-h" min="1.5" max="2.5" step="0.1" value="2.0" class="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer slider-thumb">
+                    </div>
+                </div>
+            </div>
+
+            <!-- 2. 实时数据监测 -->
+            <div class="flex-1 p-5 bg-slate-50 overflow-y-auto">
+                <h3 class="font-bold text-gray-800 mb-3 flex items-center gap-2 text-sm uppercase tracking-wider">
+                    <svg class="w-4 h-4 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
+                    实时能量与状态
+                </h3>
+                <p class="text-xs text-gray-400 mb-4 bg-white p-2 rounded border border-gray-100">设定质量 $m = 0.6 \text{kg}$ (标准篮球)</p>
+
+                <!-- 表头 -->
+                <div class="flex flex-col gap-4 pb-10">
+                    <!-- 运动员 A 数据卡 -->
+                    <div class="bg-white p-4 rounded-lg shadow-sm border-t-4 border-red-500">
+                        <div class="text-xs font-bold text-red-600 uppercase mb-3 border-b pb-2 tracking-wide flex justify-between items-center">
+                            运动员 A (近)
+                            <span class="w-2 h-2 rounded-full bg-red-500 inline-block"></span>
+                        </div>
+                        <div id="data-p1">
+                            <!-- JS 填充 -->
+                        </div>
+                    </div>
+
+                    <!-- 运动员 B 数据卡 -->
+                    <div class="bg-white p-4 rounded-lg shadow-sm border-t-4 border-blue-500">
+                        <div class="text-xs font-bold text-blue-600 uppercase mb-3 border-b pb-2 tracking-wide flex justify-between items-center">
+                            运动员 B (远)
+                            <span class="w-2 h-2 rounded-full bg-blue-500 inline-block"></span>
+                        </div>
+                        <div id="data-p2">
+                            <!-- JS 填充 -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <script>
+    (function() {
+        // --- 物理常量 ---
+        const G = 9.8; 
+        const MASS = 0.6; // kg
+        const HOOP_H = 3.05; 
+        const HOOP_X_OFFSET_METERS = 1;
+
+        // --- 状态 ---
+        const state = {
+            v0: 10.5,
+            d1: 4.0,
+            d2: 7.0,
+            h: 2.0,
+            
+            simulating: true,  // 默认自动开始
+            paused: false,     // 默认不暂停
+            time: 0,           
+            maxTime: 0,        
+            simSpeed: 1.0,     
+            
+            solutions: { p1: null, p2: null }
+        };
+
+        // --- DOM 引用 ---
+        const canvas = document.getElementById('simCanvas');
+        const ctx = canvas.getContext('2d');
+        const els = {
+            v0: document.getElementById('input-v0'),
+            d1: document.getElementById('input-d1'),
+            d2: document.getElementById('input-d2'),
+            h: document.getElementById('input-h'),
+            v0Val: document.getElementById('val-v0'),
+            d1Val: document.getElementById('val-d1'),
+            d2Val: document.getElementById('val-d2'),
+            hVal: document.getElementById('val-h'),
+            
+            btnShoot: document.getElementById('btn-shoot'),
+            btnReset: document.getElementById('btn-reset'),
+            btnPlayPauseSm: document.getElementById('btn-play-pause-sm'),
+            iconPlay: document.getElementById('icon-play'),
+            iconPause: document.getElementById('icon-pause'),
+            
+            status: document.getElementById('status-msg'),
+            
+            inputTime: document.getElementById('input-time'),
+            timeDisplay: document.getElementById('time-display'),
+            
+            dataP1: document.getElementById('data-p1'),
+            dataP2: document.getElementById('data-p2')
+        };
+
+        // --- 工具：公式渲染 ---
+        function renderMath(latex) {
+            if (window.katex) {
+                return katex.renderToString(latex, { throwOnError: false });
+            }
+            return latex; // Fallback
+        }
+
+        // --- 物理计算 ---
+
+        function solveBallisticAngle(v, dist, hRelease, hTarget) {
+            const dx = dist;
+            const dy = hTarget - hRelease;
+            const K = (G * dx * dx) / (2 * v * v);
+            const A = K;
+            const B = -dx;
+            const C = dy + K;
+            const disc = B * B - 4 * A * C;
+            
+            if (disc < 0) return null;
+            const tanTheta = (-B + Math.sqrt(disc)) / (2 * A); 
+            return Math.atan(tanTheta);
+        }
+
+        function calculateTrajectory(v0, theta, hRelease) {
+            const vx = v0 * Math.cos(theta);
+            const vy = v0 * Math.sin(theta);
+            const tLand = (vy + Math.sqrt(vy*vy + 2*G*hRelease)) / G;
+            return { vx, vy, tLand, theta };
+        }
+
+        function updatePhysics() {
+            // 解算 P1
+            const theta1 = solveBallisticAngle(state.v0, state.d1, state.h, HOOP_H);
+            if (theta1 !== null) {
+                state.solutions.p1 = calculateTrajectory(state.v0, theta1, state.h);
+                state.solutions.p1.success = true;
+                state.solutions.p1.deg = (theta1 * 180 / Math.PI).toFixed(1);
+            } else {
+                state.solutions.p1 = { success: false };
+            }
+
+            // 解算 P2
+            const theta2 = solveBallisticAngle(state.v0, state.d2, state.h, HOOP_H);
+            if (theta2 !== null) {
+                state.solutions.p2 = calculateTrajectory(state.v0, theta2, state.h);
+                state.solutions.p2.success = true;
+                state.solutions.p2.deg = (theta2 * 180 / Math.PI).toFixed(1);
+            } else {
+                state.solutions.p2 = { success: false };
+            }
+
+            // 更新最大时间
+            const t1 = state.solutions.p1.success ? state.solutions.p1.tLand : 0;
+            const t2 = state.solutions.p2.success ? state.solutions.p2.tLand : 0;
+            state.maxTime = Math.max(t1, t2);
+            if (state.maxTime === 0) state.maxTime = 1; 
+
+            // 更新滑块
+            els.inputTime.max = (state.maxTime + 0.1).toFixed(2);
+        }
+
+        // --- 实时数据计算 ---
+        function getInstantData(sol, t, hRelease) {
+            if (!sol.success) return null;
+            
+            const time = Math.min(t, sol.tLand);
+            
+            // 速度
+            const vx = sol.vx;
+            const vy = sol.vy - G * time;
+            const v = Math.sqrt(vx*vx + vy*vy);
+            
+            // 高度
+            const y = hRelease + sol.vy * time - 0.5 * G * time * time;
+            
+            // 能量
+            const Ek = 0.5 * MASS * v * v;
+            const Ep = MASS * G * y;
+            const Emech = Ek + Ep;
+
+            // 角度 (物理角度)
+            const angle = Math.atan2(vy, vx) * 180 / Math.PI;
+
+            return { t: time, v, vx, vy, angle, y, Ek, Ep, Emech };
+        }
+
+        function renderDataCard(container, data, initialAngle, isSuccess) {
+            if (!isSuccess) {
+                container.innerHTML = `<div class="text-red-500 font-bold text-center py-4 bg-red-50 rounded">力量不足 (无法到达)</div>`;
+                return;
+            }
+
+            // 生成数据行
+            const row = (label, val, unit, colorClass="text-gray-800") => `
+                <div class="data-row">
+                    <span class="data-label">${renderMath(label)}</span>
+                    <span class="data-val ${colorClass}">${val} <span class="text-gray-400 font-normal text-xs ml-1">${unit}</span></span>
+                </div>
+            `;
+
+            container.innerHTML = `
+                ${row("\\theta_0 \\text{ (发射角)}", initialAngle, "°", "text-purple-600")}
+                ${row("v \\text{ (瞬时速率)}", data.v.toFixed(2), "m/s")}
+                ${row("\\alpha \\text{ (速度方向)}", data.angle.toFixed(1), "°")}
+                ${row("E_k \\text{ (动能)}", data.Ek.toFixed(2), "J", "text-amber-600")}
+                ${row("E_p \\text{ (势能)}", data.Ep.toFixed(2), "J", "text-emerald-600")}
+                <div class="data-row border-none pt-2 mt-1 bg-gray-50 rounded px-2">
+                    <span class="data-label font-bold text-gray-700">${renderMath("E \\text{ (机械能)}")}</span>
+                    <span class="data-val text-blue-700">${data.Emech.toFixed(2)} <span class="text-gray-400 font-normal text-xs ml-1">J</span></span>
+                </div>
+            `;
+        }
+
+        // --- 绘图系统 ---
+
+        function resizeCanvas() {
+            const container = document.getElementById('canvas-container');
+            if (!container) return;
+            canvas.width = container.clientWidth;
+            canvas.height = container.clientHeight;
+            draw();
+        }
+        window.addEventListener('resize', resizeCanvas);
+
+        function worldToScreen(x, y) {
+            const maxDist = Math.max(state.d1, state.d2, 8); 
+            const paddingX = 60;
+            const paddingY = 60;
+            
+            const availableWidth = canvas.width - paddingX * 2;
+            const availableHeight = canvas.height - paddingY * 2;
+            
+            const scaleX = availableWidth / (maxDist + 2);
+            const scaleY = availableHeight / 6;
+            const ppm = Math.min(scaleX, scaleY);
+            
+            const hoopScreenX = canvas.width - paddingX - (HOOP_X_OFFSET_METERS * ppm);
+            const groundScreenY = canvas.height - paddingY;
+            
+            return {
+                x: hoopScreenX - (x * ppm),
+                y: groundScreenY - (y * ppm),
+                ppm: ppm
+            };
+        }
+
+        function drawPlayer(ctx, dist, color) {
+            const pos = worldToScreen(dist, 0);
+            const headPos = worldToScreen(dist, state.h);
+            const ppm = pos.ppm;
+
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(pos.x, pos.y);
+            ctx.lineTo(pos.x, headPos.y + 0.5 * ppm);
+            ctx.lineTo(pos.x, headPos.y + 0.2 * ppm);
+            ctx.stroke();
+            
+            ctx.beginPath();
+            ctx.arc(pos.x, headPos.y, 0.15 * ppm, 0, Math.PI * 2);
+            ctx.stroke();
+
+            ctx.fillStyle = color;
+            ctx.font = "bold 12px Arial";
+            ctx.textAlign = "center";
+            ctx.fillText(`${dist.toFixed(1)}m`, pos.x, pos.y + 20);
+        }
+
+        function drawHoop(ctx) {
+            const basePos = worldToScreen(0, 0);
+            const hoopPos = worldToScreen(0, HOOP_H);
+            const ppm = basePos.ppm;
+
+            ctx.strokeStyle = "#374151";
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.moveTo(basePos.x + 0.2 * ppm, basePos.y);
+            ctx.lineTo(basePos.x + 0.2 * ppm, hoopPos.y);
+            ctx.lineTo(hoopPos.x, hoopPos.y);
+            ctx.stroke();
+
+            ctx.strokeStyle = "#9ca3af";
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.moveTo(hoopPos.x + 0.05 * ppm, hoopPos.y - 0.45 * ppm);
+            ctx.lineTo(hoopPos.x + 0.05 * ppm, hoopPos.y + 0.15 * ppm);
+            ctx.stroke();
+
+            ctx.strokeStyle = "#ea580c";
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(hoopPos.x, hoopPos.y);
+            ctx.lineTo(hoopPos.x - 0.45 * ppm, hoopPos.y);
+            ctx.stroke();
+            
+            // 网
+            ctx.strokeStyle = "rgba(255,255,255,0.8)";
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(hoopPos.x, hoopPos.y);
+            ctx.lineTo(hoopPos.x - 0.1 * ppm, hoopPos.y + 0.4 * ppm);
+            ctx.lineTo(hoopPos.x - 0.35 * ppm, hoopPos.y + 0.4 * ppm);
+            ctx.lineTo(hoopPos.x - 0.45 * ppm, hoopPos.y);
+            ctx.stroke();
+        }
+
+        function drawVectorArrow(ctx, x, y, angleRad, length, color) {
+            ctx.save();
+            ctx.translate(x, y);
+            // Canvas y轴向下，物理y轴向上。
+            // 物理角度 theta, vx=vcos, vy=vsin.
+            // 屏幕 dx = -vx, dy = -vy.
+            // screenAngle = atan2(-vy, -vx).
+            // 但是我们不想重新算，直接用 rotate。
+            // 简单点：箭头初始朝右 (0度)。
+            // 如果要指向上方，Canvas 需要 rotate(-PI/2).
+            // 我们的角度 angleRad 来自 atan2(-vy, vx) (屏幕系)。
+            ctx.rotate(angleRad); // 直接旋转
+            
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.lineTo(length, 0);
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // 箭头
+            ctx.beginPath();
+            ctx.moveTo(length, 0);
+            ctx.lineTo(length - 5, -3);
+            ctx.lineTo(length - 5, 3);
+            ctx.lineTo(length, 0);
+            ctx.fillStyle = color;
+            ctx.fill();
+            ctx.restore();
+        }
+
+        function drawBallAndTrajectory(ctx, startDist, sol, currentTime, color, colorDark) {
+            if (!sol.success) return;
+
+            // 1. 轨迹
+            ctx.beginPath();
+            ctx.strokeStyle = color;
+            ctx.globalAlpha = 0.5;
+            ctx.setLineDash([4, 4]);
+            ctx.lineWidth = 2;
+            
+            const steps = 60;
+            for(let i=0; i<=steps; i++) {
+                const st = (sol.tLand / steps) * i;
+                const sdx = sol.vx * st;
+                const sy = state.h + sol.vy * st - 0.5 * G * st * st;
+                const sPos = worldToScreen(startDist - sdx, sy);
+                if (i===0) ctx.moveTo(sPos.x, sPos.y);
+                else ctx.lineTo(sPos.x, sPos.y);
+            }
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.globalAlpha = 1.0;
+
+            // 2. 球
+            const t = Math.min(currentTime, sol.tLand);
+            const dx = sol.vx * t;
+            const y = state.h + sol.vy * t - 0.5 * G * t * t;
+            const pos = worldToScreen(startDist - dx, y);
+            const ppm = pos.ppm;
+
+            ctx.beginPath();
+            ctx.fillStyle = "#f97316"; 
+            ctx.arc(pos.x, pos.y, 0.12 * ppm, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = "#7c2d12"; 
+            ctx.lineWidth = 1;
+            ctx.stroke();
+
+            // 3. 矢量
+            const curVy = sol.vy - G * t;
+            const curVx = sol.vx;
+            // 屏幕坐标系下：x轴向左为正(因为dist是距离篮筐距离)，y轴向下为正。
+            // 实际上我们的worldToScreen: x = hoop - dist*ppm. 
+            // 如果dist减小 (球向右飞)，screenX 增加。所以 vx > 0 对应 screenX 增加。
+            // y 增加 (球向上)，screenY 减小。所以 vy > 0 对应 screenY 减小。
+            // 屏幕速度向量: (vx, -vy) * ppm.
+            // 角度: atan2(-vy, vx).
+            const screenAngle = Math.atan2(-curVy, curVx); 
+            const vMag = Math.sqrt(curVx*curVx + curVy*curVy);
+            drawVectorArrow(ctx, pos.x, pos.y, screenAngle, vMag * 2.5, colorDark); 
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            const groundY = worldToScreen(0, 0).y;
+            
+            // 背景
+            var grd = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            grd.addColorStop(0, "#f0f9ff");
+            grd.addColorStop(1, "#e0f2fe");
+            ctx.fillStyle = grd;
+            ctx.fillRect(0, 0, canvas.width, groundY);
+
+            // 地面
+            ctx.fillStyle = "#f3f4f6";
+            ctx.fillRect(0, groundY, canvas.width, canvas.height - groundY);
+            ctx.strokeStyle = "#d1d5db";
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(0, groundY);
+            ctx.lineTo(canvas.width, groundY);
+            ctx.stroke();
+
+            drawHoop(ctx);
+
+            drawPlayer(ctx, state.d1, "#dc2626"); 
+            drawPlayer(ctx, state.d2, "#2563eb"); 
+
+            const data1 = getInstantData(state.solutions.p1, state.time, state.h);
+            const data2 = getInstantData(state.solutions.p2, state.time, state.h);
+
+            drawBallAndTrajectory(ctx, state.d1, state.solutions.p1, state.time, "#fca5a5", "#dc2626");
+            drawBallAndTrajectory(ctx, state.d2, state.solutions.p2, state.time, "#93c5fd", "#2563eb");
+
+            renderDataCard(els.dataP1, data1, state.solutions.p1.deg, state.solutions.p1.success);
+            renderDataCard(els.dataP2, data2, state.solutions.p2.deg, state.solutions.p2.success);
+        }
+
+        // --- 核心逻辑 ---
+
+        function togglePlayPause() {
+            if (!state.simulating) {
+                // 重来
+                if (state.time >= state.maxTime) state.time = 0;
+                state.simulating = true;
+                state.paused = false;
+                animate();
+            } else {
+                state.paused = !state.paused;
+                if (!state.paused) animate();
+            }
+            updateUIState();
+        }
+
+        function updateUIState() {
+            const isRunning = state.simulating && !state.paused;
+            if (isRunning) {
+                els.iconPlay.classList.add('hidden');
+                els.iconPause.classList.remove('hidden');
+                els.status.innerText = "播放中...";
+                els.btnShoot.innerHTML = "暂停";
+                els.btnShoot.classList.replace("bg-blue-600", "bg-amber-500");
+                els.btnShoot.classList.replace("hover:bg-blue-700", "hover:bg-amber-600");
+            } else {
+                els.iconPlay.classList.remove('hidden');
+                els.iconPause.classList.add('hidden');
+                els.btnShoot.classList.replace("bg-amber-500", "bg-blue-600");
+                els.btnShoot.classList.replace("hover:bg-amber-600", "hover:bg-blue-700");
+                
+                if (state.simulating) {
+                    els.status.innerText = "已暂停 (拖动滑块查看)";
+                    els.btnShoot.innerHTML = "继续";
+                } else {
+                    if (state.time >= state.maxTime && state.maxTime > 0) {
+                        els.status.innerText = "模拟结束";
+                        els.btnShoot.innerHTML = "重放";
+                    } else {
+                        els.status.innerText = "准备就绪";
+                        els.btnShoot.innerHTML = "投篮";
+                    }
+                }
+            }
+            
+            els.inputTime.value = state.time;
+            els.timeDisplay.innerText = `t = ${state.time.toFixed(2)}s`;
+        }
+
+        function animate() {
+            if (!state.simulating || state.paused) return;
+
+            state.time += 0.016 * state.simSpeed; 
+            
+            if (state.time >= state.maxTime + 0.1) {
+                state.time = state.maxTime + 0.1;
+                state.simulating = false;
+                state.paused = false;
+            }
+
+            updateUIState();
+            draw();
+
+            if (state.simulating && !state.paused) {
+                requestAnimationFrame(animate);
+            }
+        }
+
+        // --- 事件监听 ---
+
+        function handleParamInput(key, el, valEl) {
+            el.addEventListener('input', (e) => {
+                state[key] = parseFloat(e.target.value);
+                valEl.innerText = state[key].toFixed(1) + " m" + (key==='v0'?'/s':'');
+                state.time = 0;
+                state.simulating = false;
+                state.paused = false;
+                updatePhysics();
+                updateUIState();
+                draw();
+            });
+        }
+        handleParamInput('v0', els.v0, els.v0Val);
+        handleParamInput('d1', els.d1, els.d1Val);
+        handleParamInput('d2', els.d2, els.d2Val);
+        handleParamInput('h', els.h, els.hVal);
+
+        els.inputTime.addEventListener('input', (e) => {
+            state.time = parseFloat(e.target.value);
+            if (state.simulating) {
+                state.paused = true;
+            } else {
+                // 如果在停止状态下拖动，进入暂停模式
+                if (state.time < state.maxTime) {
+                    state.simulating = true;
+                    state.paused = true;
+                }
+            }
+            updateUIState();
+            draw();
+        });
+
+        els.btnShoot.addEventListener('click', togglePlayPause);
+        els.btnPlayPauseSm.addEventListener('click', togglePlayPause);
+
+        els.btnReset.addEventListener('click', () => {
+            state.v0 = 10.5;
+            state.d1 = 4.0;
+            state.d2 = 7.0;
+            state.h = 2.0;
+            state.time = 0;
+            state.simulating = true; // 重置后自动播放
+            state.paused = false;
+            
+            els.v0.value = 10.5; els.v0Val.innerText = "10.5 m/s";
+            els.d1.value = 4.0; els.d1Val.innerText = "4.0 m";
+            els.d2.value = 7.0; els.d2Val.innerText = "7.0 m";
+            els.h.value = 2.0; els.hVal.innerText = "2.0 m";
+
+            updatePhysics();
+            updateUIState();
+            animate();
+        });
+
+        // 初始化
+        // 使用 renderMath 预渲染 HTML 中的公式 (如果有静态的)
+        if(window.katex) {
+            document.querySelectorAll('[data-latex]').forEach(el => {
+                el.innerHTML = katex.renderToString(el.dataset.latex);
+            });
+        }
+
+        updatePhysics();
+        resizeCanvas();
+        updateUIState();
+        animate(); // Auto start
+    })();
+    </script>
+</body>
+</html>

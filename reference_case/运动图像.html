@@ -1,0 +1,890 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>高中物理运动图像手绘实验室 (Kinematics Sketch Lab)</title>
+    <style>
+        :root {
+            --primary-color: #3b82f6; /* 蓝色: 位移 x */
+            --secondary-color: #10b981; /* 绿色: 速度 v */
+            --tertiary-color: #ef4444; /* 红色: 加速度 a */
+            --bg-color: #f8fafc;
+            --panel-bg: #ffffff;
+            --text-color: #1e293b;
+            --border-color: #e2e8f0;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            min-height: 100vh;
+        }
+
+        .app-container {
+            width: 100%;
+            max-width: 800px;
+            padding: 20px;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        /* --- Header & Mode Switcher --- */
+        header {
+            text-align: center;
+            margin-bottom: 10px;
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            margin: 0 0 10px 0;
+            color: #0f172a;
+        }
+
+        .mode-switcher {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            background: var(--panel-bg);
+            padding: 5px;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .mode-btn {
+            padding: 8px 16px;
+            border: 2px solid transparent;
+            background: none;
+            cursor: pointer;
+            border-radius: 6px;
+            font-weight: 600;
+            transition: all 0.2s;
+            flex: 1;
+        }
+
+        .mode-btn.active {
+            background-color: #eff6ff;
+            border-color: var(--primary-color);
+            color: var(--primary-color);
+        }
+        
+        /* 动态改变激活按钮的颜色 */
+        .mode-btn[data-mode="x"].active { border-color: var(--primary-color); color: var(--primary-color); background-color: #eff6ff; }
+        .mode-btn[data-mode="v"].active { border-color: var(--secondary-color); color: var(--secondary-color); background-color: #ecfdf5; }
+        .mode-btn[data-mode="a"].active { border-color: var(--tertiary-color); color: var(--tertiary-color); background-color: #fef2f2; }
+
+        /* --- Canvas Area --- */
+        .canvas-wrapper {
+            position: relative;
+            background: var(--panel-bg);
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+            height: 320px; /* 画布高度 */
+            border: 1px solid var(--border-color);
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            touch-action: none; /* 禁止触摸滚动，允许绘图 */
+            cursor: crosshair;
+        }
+
+        .axis-label {
+            position: absolute;
+            font-size: 12px;
+            color: #64748b;
+            pointer-events: none;
+            font-weight: bold;
+        }
+        .y-label { top: 10px; left: 10px; }
+        .x-label { bottom: 10px; right: 10px; }
+        .hint-overlay {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            color: #94a3b8;
+            font-size: 1.2rem;
+            pointer-events: none;
+            opacity: 0.5;
+            user-select: none;
+        }
+
+        /* --- Simulation Area --- */
+        .sim-area {
+            background: var(--panel-bg);
+            height: 160px;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            position: relative;
+            overflow: hidden;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.05);
+            display: flex;
+            align-items: center;
+        }
+
+        .track-bg {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            background-image: linear-gradient(90deg, #e2e8f0 1px, transparent 1px);
+            background-size: 50px 100%; /* 每50px一格 */
+            z-index: 0;
+        }
+        
+        .track-line {
+            position: absolute;
+            width: 100%;
+            height: 2px;
+            background: #94a3b8;
+            top: 70%;
+            z-index: 0;
+        }
+
+        .car {
+            position: absolute;
+            bottom: 30%; /* 放在跑道线上 */
+            width: 60px;
+            height: 30px;
+            background: #334155;
+            border-radius: 6px 6px 0 0;
+            transform: translateX(-50%); /* 中心对齐 */
+            z-index: 10;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            font-size: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+            transition: left 0.05s linear; /* 平滑移动 */
+        }
+        
+        .car::after {
+            content: '';
+            position: absolute;
+            bottom: -8px;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            padding: 0 5px;
+            box-sizing: border-box;
+        }
+        
+        .wheel {
+            width: 14px;
+            height: 14px;
+            background: #000;
+            border-radius: 50%;
+            position: absolute;
+            bottom: -7px;
+        }
+        .w-left { left: 8px; }
+        .w-right { right: 8px; }
+
+        .vector-arrow {
+            position: absolute;
+            top: -20px;
+            left: 50%;
+            height: 4px;
+            background-color: var(--secondary-color);
+            transform-origin: left center;
+            z-index: 5;
+            display: flex;
+            align-items: center;
+        }
+        .vector-arrow::after {
+            content: '';
+            position: absolute;
+            right: -8px;
+            top: -6px;
+            border-width: 8px 0 8px 10px;
+            border-style: solid;
+            border-color: transparent transparent transparent var(--secondary-color);
+        }
+
+        /* --- Controls & Data --- */
+        .controls-area {
+            background: var(--panel-bg);
+            padding: 15px;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 15px;
+            align-items: center;
+        }
+
+        .playback-controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        button {
+            background: #f1f5f9;
+            border: 1px solid #cbd5e1;
+            padding: 8px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+        button:hover { background: #e2e8f0; }
+        button.primary {
+            background: #3b82f6;
+            color: white;
+            border-color: #2563eb;
+        }
+        button.primary:hover { background: #2563eb; }
+
+        .scrubber-container {
+            width: 100%;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        input[type="range"] {
+            flex: 1;
+            cursor: pointer;
+        }
+
+        .data-panel {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            background: #f8fafc;
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid #e2e8f0;
+        }
+
+        .data-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .data-label { font-size: 10px; color: #64748b; font-weight: bold; }
+        .data-value { font-weight: bold; }
+
+        .val-t { color: #64748b; }
+        .val-x { color: var(--primary-color); }
+        .val-v { color: var(--secondary-color); }
+        .val-a { color: var(--tertiary-color); }
+
+    </style>
+</head>
+<body>
+
+<div class="app-container">
+    <header>
+        <h1>高中物理运动图像手绘实验室</h1>
+        <div class="mode-switcher">
+            <button class="mode-btn" data-mode="x" onclick="app.setMode('x')">画位移 (x-t)</button>
+            <button class="mode-btn active" data-mode="v" onclick="app.setMode('v')">画速度 (v-t)</button>
+            <button class="mode-btn" data-mode="a" onclick="app.setMode('a')">画加速度 (a-t)</button>
+        </div>
+    </header>
+
+    <!-- 画布区域 -->
+    <div class="canvas-wrapper" id="canvasContainer">
+        <canvas id="graphCanvas"></canvas>
+        <div class="axis-label y-label" id="yAxisLabel">v (m/s)</div>
+        <div class="axis-label x-label">t (s)</div>
+        <div class="hint-overlay" id="hintText">在画布上拖动绘制图线</div>
+    </div>
+
+    <!-- 仿真区域 -->
+    <div class="sim-area">
+        <div class="track-bg"></div>
+        <div class="track-line"></div>
+        <div class="car" id="simCar">
+            Car
+            <div class="vector-arrow" id="vectorArrow" style="display: none;"></div>
+            <div class="wheel w-left"></div>
+            <div class="wheel w-right"></div>
+        </div>
+    </div>
+
+    <!-- 控制面板 -->
+    <div class="controls-area">
+        <div class="playback-controls">
+            <button class="primary" id="btnPlayPause" onclick="app.togglePlay()">播放</button>
+            <button onclick="app.reset()">重置</button>
+            <button onclick="app.smoothCurve()" title="去除手绘抖动">平滑曲线</button>
+            
+            <div class="scrubber-container">
+                <span style="font-size:12px">进度:</span>
+                <input type="range" id="timeScrubber" min="0" max="1000" value="0" step="1" oninput="app.scrub(this.value)">
+            </div>
+            
+            <select id="speedSelect" onchange="app.setSpeed(this.value)" style="padding: 5px; border-radius: 4px;">
+                <option value="0.5">0.5x</option>
+                <option value="1.0" selected>1.0x</option>
+                <option value="2.0">2.0x</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- 数据显示 -->
+    <div class="data-panel">
+        <div class="data-item"><span class="data-label">t (s)</span><span class="data-value val-t" id="dispT">0.00</span></div>
+        <div class="data-item"><span class="data-label">x (m)</span><span class="data-value val-x" id="dispX">0.00</span></div>
+        <div class="data-item"><span class="data-label">v (m/s)</span><span class="data-value val-v" id="dispV">0.00</span></div>
+        <div class="data-item"><span class="data-label">a (m/s²)</span><span class="data-value val-a" id="dispA">0.00</span></div>
+    </div>
+</div>
+
+<script>
+/**
+ * 高中物理运动图像手绘实验室 (Kinematics Sketch Lab)
+ * Core Logic Module
+ */
+const app = (function() {
+    // --- 配置常量 ---
+    const CONFIG = {
+        totalTime: 10,      // 总时间 10秒
+        timeStep: 0.02,     // 物理计算时间步长 (dt = 20ms, 50Hz)
+        gridLines: 10,      // 网格线数量
+        maxVal: 10,         // 默认纵坐标最大值
+        minVal: -10,        // 默认纵坐标最小值
+        trackWidthMeters: 20 // 仿真跑道代表的物理宽度 (比如屏幕宽度 = 20米)
+    };
+
+    // --- 全局状态 ---
+    let state = {
+        mode: 'v',          // 当前模式: 'x', 'v', 'a'
+        isPlaying: false,
+        currentTime: 0,     // 当前播放时间 (s)
+        playbackSpeed: 1.0,
+        isDrawing: false,
+        hasData: false,     // 是否已有绘制数据
+        animationId: null
+    };
+
+    // --- 物理数据 ---
+    // 数组长度 = totalTime / timeStep
+    let physics = {
+        n: Math.ceil(CONFIG.totalTime / CONFIG.timeStep),
+        t: [], // 时间数组
+        x: [], // 位移
+        v: [], // 速度
+        a: [], // 加速度
+        drawn: [] // 存储用户直接绘制的原始数据 (归一化 -1 到 1)
+    };
+
+    // --- DOM 元素 ---
+    const canvas = document.getElementById('graphCanvas');
+    const ctx = canvas.getContext('2d');
+    const car = document.getElementById('simCar');
+    const vectorArrow = document.getElementById('vectorArrow');
+    const hintText = document.getElementById('hintText');
+    const scrubber = document.getElementById('timeScrubber');
+    const btnPlay = document.getElementById('btnPlayPause');
+    
+    // 显示面板 DOM
+    const dispT = document.getElementById('dispT');
+    const dispX = document.getElementById('dispX');
+    const dispV = document.getElementById('dispV');
+    const dispA = document.getElementById('dispA');
+    const yAxisLabel = document.getElementById('yAxisLabel');
+
+    // --- 初始化 ---
+    function init() {
+        resizeCanvas();
+        resetData();
+        window.addEventListener('resize', resizeCanvas);
+        
+        // 绑定绘图事件
+        canvas.addEventListener('mousedown', startDrawing);
+        canvas.addEventListener('mousemove', draw);
+        window.addEventListener('mouseup', stopDrawing);
+        
+        // 触摸支持
+        canvas.addEventListener('touchstart', (e) => { e.preventDefault(); startDrawing(e.touches[0]); }, {passive: false});
+        canvas.addEventListener('touchmove', (e) => { e.preventDefault(); draw(e.touches[0]); }, {passive: false});
+        window.addEventListener('touchend', stopDrawing);
+
+        // 启动渲染循环
+        requestAnimationFrame(renderLoop);
+    }
+
+    function resizeCanvas() {
+        const rect = canvas.parentElement.getBoundingClientRect();
+        canvas.width = rect.width;
+        canvas.height = rect.height;
+        // drawGrid(); // 已删除，因为 renderLoop 中包含了网格绘制逻辑
+    }
+
+    function resetData() {
+        physics.t = new Array(physics.n).fill(0).map((_, i) => i * CONFIG.timeStep);
+        physics.x = new Array(physics.n).fill(0);
+        physics.v = new Array(physics.n).fill(0);
+        physics.a = new Array(physics.n).fill(0);
+        physics.drawn = new Array(physics.n).fill(null); // null 表示未绘制
+        
+        state.currentTime = 0;
+        state.hasData = false;
+        state.isPlaying = false;
+        updatePlayButton();
+        scrubber.value = 0;
+        
+        hintText.style.display = 'block';
+        updateSimulation(0);
+    }
+
+    // --- 核心逻辑: 模式切换 ---
+    function setMode(newMode) {
+        state.mode = newMode;
+        
+        // 更新UI按钮状态
+        document.querySelectorAll('.mode-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.mode === newMode);
+        });
+
+        // 更新坐标轴标签
+        let unit = '';
+        let range = '';
+        if (newMode === 'x') { unit = 'x (m)'; CONFIG.maxVal = 10; CONFIG.minVal = -10; }
+        if (newMode === 'v') { unit = 'v (m/s)'; CONFIG.maxVal = 10; CONFIG.minVal = -10; }
+        if (newMode === 'a') { unit = 'a (m/s²)'; CONFIG.maxVal = 5; CONFIG.minVal = -5; }
+        yAxisLabel.textContent = unit;
+        
+        resetData();
+        resizeCanvas(); // 重绘坐标轴
+    }
+
+    // --- 绘图逻辑 ---
+    let lastDrawIndex = -1;
+
+    function getCanvasPos(e) {
+        const rect = canvas.getBoundingClientRect();
+        return {
+            x: e.clientX - rect.left,
+            y: e.clientY - rect.top
+        };
+    }
+
+    function startDrawing(e) {
+        if (state.isPlaying) return;
+        state.isDrawing = true;
+        hintText.style.display = 'none';
+        
+        // 如果是从头开始画，重置数据
+        // 但为了允许修改局部，只有当点击在开始位置附近时才重置？
+        // 为了简化交互：每次按下鼠标，如果之前没有数据，就清空。
+        // 如果已有数据，允许"覆写"。
+        if (!state.hasData) {
+            resetData(); 
+            // 默认填充0，方便从中间画
+            physics.drawn.fill(0);
+        }
+        
+        draw(e);
+    }
+
+    function draw(e) {
+        if (!state.isDrawing) return;
+
+        const pos = getCanvasPos(e);
+        
+        // 1. 映射 X 坐标到时间索引
+        let timeRatio = Math.max(0, Math.min(1, pos.x / canvas.width));
+        let index = Math.floor(timeRatio * (physics.n - 1));
+
+        // 2. 映射 Y 坐标到数值 (-1 到 1 的归一化值，方便不同量纲转换)
+        // Canvas Y: 0 (top) -> Height (bottom)
+        // Value: Max -> Min
+        let valRatio = 1 - (pos.y / canvas.height); // 0(bottom) to 1(top)
+        let normVal = (valRatio - 0.5) * 2; // -1 to 1
+        
+        // 约束：不能画出范围
+        normVal = Math.max(-1, Math.min(1, normVal));
+
+        // 3. 处理防回退 & 插值 (Interpolation)
+        // 允许用户随意画，但我们只更新当前鼠标 x 对应的时间点。
+        // 为了平滑，如果鼠标移动太快，需要在 lastDrawIndex 和 currentIndex 之间插值
+        
+        if (lastDrawIndex !== -1 && Math.abs(index - lastDrawIndex) > 1 && Math.abs(index - lastDrawIndex) < 50) {
+            // 简单的线性插值
+            let dir = index > lastDrawIndex ? 1 : -1;
+            let range = Math.abs(index - lastDrawIndex);
+            let startVal = physics.drawn[lastDrawIndex];
+            for (let i = 1; i <= range; i++) {
+                let idx = lastDrawIndex + i * dir;
+                let weight = i / range;
+                physics.drawn[idx] = startVal * (1 - weight) + normVal * weight;
+            }
+        }
+        
+        physics.drawn[index] = normVal;
+        lastDrawIndex = index;
+        state.hasData = true;
+
+        // 实时计算物理量预览（可选，这里为了性能暂只在抬起时计算完整物理，绘图时只更新显示）
+        // 但为了体验好，我们至少要把当前画的这条线渲染出来
+    }
+
+    function stopDrawing() {
+        if (!state.isDrawing) return;
+        state.isDrawing = false;
+        lastDrawIndex = -1;
+        
+        // 绘图结束，进行插值填补空洞（如果有没画到的地方，用前一个点填充）
+        fillGaps();
+        
+        // 执行物理计算
+        calculatePhysics();
+    }
+    
+    function fillGaps() {
+        // 如果开头没有数据，设为0
+        if (physics.drawn[0] === null) physics.drawn[0] = 0;
+        
+        let lastVal = physics.drawn[0];
+        for (let i = 0; i < physics.n; i++) {
+            if (physics.drawn[i] === null) {
+                physics.drawn[i] = lastVal;
+            } else {
+                lastVal = physics.drawn[i];
+            }
+        }
+    }
+
+    // --- 核心算法：物理计算 (求导与积分) ---
+    function calculatePhysics() {
+        const dt = CONFIG.timeStep;
+        
+        // 1. 将归一化数据 (-1~1) 转换为 实际物理量
+        const rawData = physics.drawn.map(v => v * CONFIG.maxVal); // MaxVal = abs(MinVal)
+
+        if (state.mode === 'x') {
+            physics.x = rawData;
+            // 平滑位移 (手绘位移如果不平滑，速度会剧烈跳动)
+            smoothArray(physics.x, 5); 
+            
+            // 微分求 v: v[i] = (x[i+1] - x[i-1]) / 2dt
+            for (let i = 1; i < physics.n - 1; i++) {
+                physics.v[i] = (physics.x[i+1] - physics.x[i-1]) / (2 * dt);
+            }
+            physics.v[0] = physics.v[1]; 
+            physics.v[physics.n-1] = physics.v[physics.n-2];
+            
+            // 对 v 平滑后再求 a
+            smoothArray(physics.v, 10);
+            
+            // 微分求 a
+            for (let i = 1; i < physics.n - 1; i++) {
+                physics.a[i] = (physics.v[i+1] - physics.v[i-1]) / (2 * dt);
+            }
+            physics.a[0] = physics.a[1];
+            physics.a[physics.n-1] = physics.a[physics.n-2];
+            smoothArray(physics.a, 5); // 最后平滑一下a
+
+        } else if (state.mode === 'v') {
+            physics.v = rawData;
+            // 平滑速度
+            smoothArray(physics.v, 5);
+
+            // 积分求 x: x[i] = x[i-1] + v[i]*dt
+            // 假设初始位移为 0 (或者可以让用户设定，这里简化)
+            physics.x[0] = 0;
+            for (let i = 1; i < physics.n; i++) {
+                physics.x[i] = physics.x[i-1] + physics.v[i] * dt;
+            }
+
+            // 微分求 a
+            for (let i = 1; i < physics.n - 1; i++) {
+                physics.a[i] = (physics.v[i+1] - physics.v[i-1]) / (2 * dt);
+            }
+            physics.a[0] = physics.a[1];
+            physics.a[physics.n-1] = physics.a[physics.n-2];
+            smoothArray(physics.a, 5);
+
+        } else if (state.mode === 'a') {
+            physics.a = rawData;
+            smoothArray(physics.a, 3); // 加速度不需要太平滑，否则特征丢失
+
+            // 积分求 v (假设 v0 = 0)
+            physics.v[0] = 0;
+            for (let i = 1; i < physics.n; i++) {
+                physics.v[i] = physics.v[i-1] + physics.a[i] * dt;
+            }
+
+            // 积分求 x (假设 x0 = 0)
+            physics.x[0] = 0;
+            for (let i = 1; i < physics.n; i++) {
+                physics.x[i] = physics.x[i-1] + physics.v[i] * dt;
+            }
+        }
+    }
+
+    // 移动平均平滑算法
+    function smoothArray(arr, windowSize) {
+        if (windowSize < 2) return;
+        const temp = [...arr];
+        for (let i = 0; i < arr.length; i++) {
+            let sum = 0;
+            let count = 0;
+            for (let w = -windowSize; w <= windowSize; w++) {
+                if (i + w >= 0 && i + w < arr.length) {
+                    sum += temp[i + w];
+                    count++;
+                }
+            }
+            arr[i] = sum / count;
+        }
+    }
+
+    // 供按钮手动调用的强力平滑
+    function smoothCurve() {
+        if (!state.hasData) return;
+        // 对原始绘制数据进行平滑
+        const currentData = physics.drawn; // 引用
+        smoothArray(currentData, 10);
+        calculatePhysics(); // 重新计算所有衍生量
+    }
+
+    // --- 播放控制与仿真 ---
+    function togglePlay() {
+        if (!state.hasData) return;
+        state.isPlaying = !state.isPlaying;
+        updatePlayButton();
+        if (state.isPlaying) {
+            // 如果已经在末尾，重置到开头
+            if (state.currentTime >= CONFIG.totalTime - 0.1) {
+                state.currentTime = 0;
+            }
+            lastTime = performance.now();
+            requestAnimationFrame(playLoop);
+        }
+    }
+
+    function updatePlayButton() {
+        btnPlay.textContent = state.isPlaying ? "暂停" : "播放";
+        btnPlay.className = state.isPlaying ? "" : "primary";
+    }
+
+    function reset() {
+        state.isPlaying = false;
+        resetData();
+    }
+
+    function setSpeed(val) {
+        state.playbackSpeed = parseFloat(val);
+    }
+
+    function scrub(val) { // val 0-1000
+        state.isPlaying = false;
+        updatePlayButton();
+        state.currentTime = (val / 1000) * CONFIG.totalTime;
+        updateSimulation(state.currentTime);
+    }
+
+    let lastTime = 0;
+    function playLoop(timestamp) {
+        if (!state.isPlaying) return;
+        
+        const dt = (timestamp - lastTime) / 1000;
+        lastTime = timestamp;
+
+        // 限制帧率跳跃
+        if (dt > 0.1) {
+            requestAnimationFrame(playLoop);
+            return;
+        }
+
+        state.currentTime += dt * state.playbackSpeed;
+
+        if (state.currentTime >= CONFIG.totalTime) {
+            state.currentTime = CONFIG.totalTime;
+            state.isPlaying = false;
+            updatePlayButton();
+        }
+
+        // 更新进度条
+        scrubber.value = (state.currentTime / CONFIG.totalTime) * 1000;
+
+        updateSimulation(state.currentTime);
+
+        if (state.isPlaying) {
+            requestAnimationFrame(playLoop);
+        }
+    }
+
+    // 根据时间 t 更新小车和数值
+    function updateSimulation(t) {
+        // 1. 获取当前索引
+        const idx = Math.min(physics.n - 1, Math.floor(t / CONFIG.timeStep));
+        
+        // 2. 获取物理量
+        const currX = physics.x[idx] || 0;
+        const currV = physics.v[idx] || 0;
+        const currA = physics.a[idx] || 0;
+
+        // 3. 更新DOM数值
+        dispT.innerText = t.toFixed(2);
+        dispX.innerText = currX.toFixed(2);
+        dispV.innerText = currV.toFixed(2);
+        dispA.innerText = currA.toFixed(2);
+
+        // 4. 更新小车位置
+        // 映射: 假设 x=0 在中间，范围 -10m 到 10m 映射到 0% 到 100%
+        // 为了视觉效果，我们假设跑道宽度对应 CONFIG.trackWidthMeters (例如20m)
+        // 0点在中心 (50%)
+        const centerPct = 50;
+        const pixelsPerMeter = 100 / CONFIG.trackWidthMeters; // 百分比每米
+        const carLeft = centerPct + (currX * pixelsPerMeter);
+        
+        car.style.left = `${Math.max(0, Math.min(100, carLeft))}%`;
+
+        // 5. 更新速度矢量箭头
+        // 长度缩放因子
+        const arrowScale = 4; 
+        const arrowLen = Math.abs(currV) * arrowScale;
+        
+        if (Math.abs(currV) < 0.1) {
+            vectorArrow.style.display = 'none';
+        } else {
+            vectorArrow.style.display = 'flex';
+            vectorArrow.style.width = `${arrowLen}px`;
+            // 旋转: 正速度向右(0deg), 负速度向左(180deg)
+            vectorArrow.style.transform = currV > 0 ? 'rotate(0deg)' : 'rotate(180deg)';
+        }
+    }
+
+    // --- 渲染循环 (Canvas Only) ---
+    function renderLoop() {
+        // 清空
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        const w = canvas.width;
+        const h = canvas.height;
+
+        // 1. 绘制网格
+        ctx.strokeStyle = '#e2e8f0';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        // 纵向网格 (时间)
+        for (let i = 0; i <= CONFIG.gridLines; i++) {
+            let x = (i / CONFIG.gridLines) * w;
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, h);
+        }
+        // 横向网格 (数值)
+        for (let i = 0; i <= CONFIG.gridLines; i++) {
+            let y = (i / CONFIG.gridLines) * h;
+            ctx.moveTo(0, y);
+            ctx.lineTo(w, y);
+        }
+        ctx.stroke();
+
+        // 2. 绘制坐标轴 (中间线)
+        ctx.strokeStyle = '#94a3b8';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(0, h/2);
+        ctx.lineTo(w, h/2); // t轴
+        ctx.moveTo(0, 0);
+        ctx.lineTo(0, h);   // y轴
+        ctx.stroke();
+
+        // 3. 绘制用户曲线
+        // 根据当前模式选择颜色
+        let color = '#3b82f6';
+        if (state.mode === 'v') color = '#10b981';
+        if (state.mode === 'a') color = '#ef4444';
+
+        if (state.hasData) {
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 3;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.beginPath();
+
+            let hasStarted = false;
+            for (let i = 0; i < physics.n; i++) {
+                // 绘制的是 physics.drawn (归一化数据)
+                // 需要映射回 Canvas 坐标
+                // drawn value 1 = top (0), -1 = bottom (h) -> wait, math above:
+                // normVal = (valRatio - 0.5) * 2
+                // valRatio = normVal/2 + 0.5
+                // y = (1 - valRatio) * h
+                
+                if (physics.drawn[i] !== null) {
+                    let val = physics.drawn[i];
+                    let x = (i / (physics.n - 1)) * w;
+                    let valRatio = val / 2 + 0.5;
+                    let y = (1 - valRatio) * h;
+
+                    if (!hasStarted) {
+                        ctx.moveTo(x, y);
+                        hasStarted = true;
+                    } else {
+                        ctx.lineTo(x, y);
+                    }
+                }
+            }
+            ctx.stroke();
+        }
+
+        // 4. 绘制 Playhead (时间指示线)
+        if (state.hasData || state.isDrawing) {
+            // 计算 Playhead x 位置
+            let playHeadX = 0;
+            if (state.isPlaying || !state.isDrawing) {
+                // 播放模式或静止模式：显示当前 currentTime
+                playHeadX = (state.currentTime / CONFIG.totalTime) * w;
+            } else {
+                // 绘图模式下，不显示 Playhead 或者让 Playhead 跟随鼠标? 
+                // 现在的逻辑是 scrubber 控制 currentTime，所以用 currentTime 即可
+                playHeadX = (state.currentTime / CONFIG.totalTime) * w;
+            }
+
+            ctx.strokeStyle = '#f59e0b'; // Amber color
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.setLineDash([5, 3]);
+            ctx.moveTo(playHeadX, 0);
+            ctx.lineTo(playHeadX, h);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            
+            // Playhead 顶部小圆点
+            ctx.fillStyle = '#f59e0b';
+            ctx.beginPath();
+            ctx.arc(playHeadX, 0, 4, 0, Math.PI*2);
+            ctx.fill();
+        }
+
+        requestAnimationFrame(renderLoop);
+    }
+
+    // Public API
+    return {
+        init,
+        setMode,
+        togglePlay,
+        reset,
+        setSpeed,
+        scrub,
+        smoothCurve
+    };
+})();
+
+// 启动应用
+window.onload = app.init;
+</script>
+
+</body>
+</html>
