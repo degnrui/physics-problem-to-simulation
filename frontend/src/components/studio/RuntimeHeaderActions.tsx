@@ -26,17 +26,17 @@ export function RuntimeHeaderActions({
   onClose,
 }: RuntimeHeaderActionsProps) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[color:var(--studio-line)] px-5 py-4">
-      <div className="flex items-center gap-2">
-        <button type="button" className="toolbar-button" onClick={() => onChangeRuntimeView("preview")} data-active={runtimeView === "preview"}>
-          预览
-        </button>
-        <button type="button" className="toolbar-button" onClick={() => onChangeRuntimeView("code")} data-active={runtimeView === "code"}>
-          代码
-        </button>
-      </div>
+    <div className="runtime-toolbar">
+      <div className="runtime-toolbar-actions">
+        <div className="flex items-center gap-2">
+          <button type="button" className="toolbar-button" onClick={() => onChangeRuntimeView("preview")} data-active={runtimeView === "preview"}>
+            预览
+          </button>
+          <button type="button" className="toolbar-button" onClick={() => onChangeRuntimeView("code")} data-active={runtimeView === "code"}>
+            代码
+          </button>
+        </div>
 
-      <div className="flex flex-wrap items-center gap-2">
         <button type="button" className="toolbar-button" onClick={onRequestEdit}>
           编辑
         </button>
@@ -46,9 +46,13 @@ export function RuntimeHeaderActions({
         <button type="button" className="toolbar-button" onClick={onDownload}>
           {downloading ? "下载中..." : "下载"}
         </button>
-        <label className="toolbar-select">
-          <span className="text-[0.78rem] uppercase tracking-[0.14em] text-[color:var(--studio-text-subtle)]">版本</span>
-          <select value={activeVersionId ?? ""} onChange={(event) => onChangeVersion(event.target.value)}>
+        <label className="toolbar-select" aria-label="版本">
+          <select
+            id="runtime-version-select"
+            name="runtime-version-select"
+            value={activeVersionId ?? ""}
+            onChange={(event) => onChangeVersion(event.target.value)}
+          >
             {versions.map((version) => (
               <option key={version.id} value={version.id}>
                 {version.label}

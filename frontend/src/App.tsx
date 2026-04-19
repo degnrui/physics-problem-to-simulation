@@ -5,8 +5,8 @@ import { ConversationContentPanel } from "./components/studio/ConversationConten
 import { FullscreenRuntimeModal } from "./components/studio/FullscreenRuntimeModal";
 import { GenerationStagePlayer } from "./components/studio/GenerationStagePlayer";
 import { HomeInputStage } from "./components/studio/HomeInputStage";
+import { HtmlRuntimeFrame } from "./components/studio/HtmlRuntimeFrame";
 import { PreviewPanel } from "./components/studio/PreviewPanel";
-import { SimulationRuntimePanel } from "./components/studio/SimulationRuntimePanel";
 import { UtilityRail } from "./components/studio/UtilityRail";
 import {
   applyInlineEdit,
@@ -23,12 +23,15 @@ import {
   ensureConversationSession,
   getStageMode,
   getStagePresentation,
+  loadHiddenRunIds,
   loadStoredSessions,
+  saveHiddenRunIds,
   saveStoredSessions,
 } from "./lib/studio";
 import {
   createHtmlExport,
   createRun,
+  deleteRun,
   exportDownloadUrl,
   getRunResult,
   getRunStatus,
@@ -64,6 +67,7 @@ function navigateTo(path: string) {
 export default function App() {
   const [route, setRoute] = useState<RouteState>(() => parseRoute(window.location.pathname));
   const [draftPrompt, setDraftPrompt] = useState(SAMPLE_PROBLEM);
+  const [createRunError, setCreateRunError] = useState<string | null>(null);
   const [followUpPrompt, setFollowUpPrompt] = useState("");
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
   const [sidebarQuery, setSidebarQuery] = useState("");
@@ -74,6 +78,7 @@ export default function App() {
   const [statusMap, setStatusMap] = useState<Record<string, RunStatusResponse | null>>({});
   const [resultMap, setResultMap] = useState<Record<string, RunResultResponse | null>>({});
   const [sessions, setSessions] = useState<Record<string, ConversationSessionData>>(() => loadStoredSessions());
+  const [hiddenRunIds, setHiddenRunIds] = useState<string[]>(() => loadHiddenRunIds());
 
   useEffect(() => {
     const onPopState = () => setRoute(parseRoute(window.location.pathname));
@@ -84,6 +89,10 @@ export default function App() {
   useEffect(() => {
     saveStoredSessions(sessions);
   }, [sessions]);
+
+  useEffect(() => {
+    saveHiddenRunIds(hiddenRunIds);
+  }, [hiddenRunIds]);
 
   useEffect(() => {
     if (route.name === "home") {
@@ -98,7 +107,7 @@ export default function App() {
     listRuns()
       .then((payload) => {
         if (!cancelled) {
-          setRuns(payload.items);
+          setRuns(payload.items.filter((item) => !hiddenRunIds.includes(item.run_id)));
         }
       })
       .catch(() => {
@@ -110,7 +119,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [route]);
+  }, [hiddenRunIds, route]);
 
   useEffect(() => {
     if (route.name !== "conversation") {
@@ -262,11 +271,18 @@ export default function App() {
   }
 
   async function handleCreateRun() {
+    if (!draftPrompt.trim()) {
+      return;
+    }
+
+    setCreateRunError(null);
     setCreatingRun(true);
     try {
       const response = await createRun(draftPrompt);
       setFollowUpPrompt("");
       navigateTo(response.route);
+    } catch {
+      setCreateRunError("生成失败，请检查后端服务或稍后重试。");
     } finally {
       setCreatingRun(false);
     }
@@ -274,6 +290,7 @@ export default function App() {
 
   function handleReturnHome() {
     setDraftPrompt(SAMPLE_PROBLEM);
+    setCreateRunError(null);
     setFollowUpPrompt("");
     setSidebarQuery("");
     setInlineEditTarget(null);
@@ -282,6 +299,38 @@ export default function App() {
 
   function handleNewConversation() {
     handleReturnHome();
+  }
+
+  async function handleDeleteConversation(conversationId: string) {
+    try {
+      await deleteRun(conversationId);
+    } catch {
+      return;
+    }
+
+    setHiddenRunIds((current) => (current.includes(conversationId) ? current : [...current, conversationId]));
+
+    setRuns((current) => current.filter((item) => item.run_id !== conversationId));
+    setStatusMap((current) => {
+      const next = { ...current };
+      delete next[conversationId];
+      return next;
+    });
+    setResultMap((current) => {
+      const next = { ...current };
+      delete next[conversationId];
+      return next;
+    });
+    setSessions((current) => {
+      const next = { ...current };
+      delete next[conversationId];
+      return next;
+    });
+
+    if (route.name === "conversation" && route.runId === conversationId) {
+      setInlineEditTarget(null);
+      navigateTo("/");
+    }
   }
 
   function handleOpenArtifact() {
@@ -373,6 +422,24 @@ export default function App() {
     }));
 
     setFollowUpPrompt("");
+  }
+
+  function handleChangeCode(value: string) {
+    if (!activeVersion) {
+      return;
+    }
+
+    updateConversationSession((session) => ({
+      ...session,
+      versions: session.versions.map((version) =>
+        version.id === activeVersion.id
+          ? {
+              ...version,
+              htmlSource: value,
+            }
+          : version,
+      ),
+    }));
   }
 
   function commitInlineEdit(nextDocument: ReturnType<typeof applyInlineEdit>, summary: string) {
@@ -471,6 +538,7 @@ export default function App() {
       onReturnHome={handleReturnHome}
       onCollapse={() => setSidebarExpanded(false)}
       onSelectConversation={(conversationId) => navigateTo(`/simulation/${conversationId}`)}
+      onDeleteConversation={handleDeleteConversation}
     />
   ) : null;
 
@@ -479,7 +547,13 @@ export default function App() {
       <HomeInputStage
         value={draftPrompt}
         loading={creatingRun}
-        onChange={setDraftPrompt}
+        errorMessage={createRunError}
+        onChange={(value) => {
+          setDraftPrompt(value);
+          if (createRunError) {
+            setCreateRunError(null);
+          }
+        }}
         onSubmit={handleCreateRun}
         onReturnHome={handleReturnHome}
       />
@@ -487,8 +561,6 @@ export default function App() {
       <GenerationStagePlayer stage={stagePresentation} percent={selectedStatus?.percent ?? 12} />
     ) : (
       <ConversationContentPanel
-        title={selectedConversation?.title ?? "当前会话"}
-        subtitle={runtimeDocument?.subtitle ?? "继续在会话里调整逻辑，在右侧验证 runtime。"}
         messages={messages}
         artifact={activeArtifact}
         activeArtifactId={activeSession?.ui.activeArtifactId ?? null}
@@ -509,26 +581,21 @@ export default function App() {
       <PreviewPanel
         versions={activeSession.versions}
         activeVersion={activeVersion}
+        artifactName={activeArtifact.name}
         runtimeView={activeSession.ui.runtimeView}
         downloading={downloading}
         inlineEditTarget={inlineEditTarget}
         onChangeVersion={handleChangeVersion}
         onChangeRuntimeView={handleChangeRuntimeView}
         onRequestEdit={setInlineEditTarget}
-        onRequestPrimaryEdit={() =>
-          setInlineEditTarget({
-            field: "title",
-            label: "标题",
-            value: activeVersion.document.title,
-            anchor: { top: 88, left: 24 },
-          })
-        }
+        onRequestPrimaryEdit={() => handleChangeRuntimeView("code")}
         onToggleFullscreen={handleToggleFullscreen}
         onDownload={handleDownload}
         onClose={handleClosePreview}
         onCancelInlineEdit={() => setInlineEditTarget(null)}
         onSaveDirectEdit={handleSaveDirectEdit}
         onSaveAiEdit={handleSaveAiEdit}
+        onChangeCode={handleChangeCode}
       />
     ) : null;
 
@@ -538,17 +605,21 @@ export default function App() {
     activeVersion ? (
       <FullscreenRuntimeModal onClose={handleToggleFullscreen}>
         <div className="surface-panel relative overflow-hidden">
-          <div className="flex items-center justify-between border-b border-[color:var(--studio-line)] px-6 py-4">
-            <div>
-              <p className="section-kicker">Fullscreen Runtime</p>
-              <p className="text-sm text-[color:var(--studio-text-muted)]">{activeVersion.label}</p>
+          <div className="runtime-toolbar runtime-toolbar-modal">
+            <div className="min-w-0">
+              <p className="runtime-toolbar-file">{activeVersion.document.artifactName}</p>
+              <p className="runtime-toolbar-meta">{activeVersion.label}</p>
             </div>
             <button type="button" className="toolbar-close-button" onClick={handleToggleFullscreen}>
               退出全屏
             </button>
           </div>
-          <div className="relative max-h-[calc(100vh-8rem)] overflow-y-auto px-6 py-6">
-            <SimulationRuntimePanel document={activeVersion.document} fullscreen onRequestEdit={setInlineEditTarget} />
+          <div className="relative max-h-[calc(100vh-8rem)] overflow-hidden px-6 py-6">
+            <HtmlRuntimeFrame
+              title={activeVersion.document.artifactName}
+              source={buildHtmlSource(activeVersion)}
+              fullscreen
+            />
           </div>
         </div>
       </FullscreenRuntimeModal>

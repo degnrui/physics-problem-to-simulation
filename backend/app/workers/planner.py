@@ -3,6 +3,10 @@ from typing import Any, Dict
 from app.domain.problem import ProblemInput
 
 
+def _contains_any(text: str, keywords: tuple[str, ...]) -> bool:
+    return any(keyword in text for keyword in keywords)
+
+
 def build_plan_metadata(problem: ProblemInput) -> Dict[str, Any]:
     text = problem.text
     if "平抛运动" in text or ("钢球" in text and "落点" in text and "水平距离" in text):
@@ -54,6 +58,29 @@ def build_plan_metadata(problem: ProblemInput) -> Dict[str, Any]:
             "simulation_mode": "stage-force-visualization",
             "simulation_ready": True,
             "reason": "飞行到触网的受力变化适合映射为阶段切换 simulation。",
+        }
+    if _contains_any(text, ("飞行", "空中")) and _contains_any(
+        text,
+        ("触网", "触板", "碰到", "碰板", "撞到", "撞击", "击中", "落地", "着地", "接触", "反弹"),
+    ):
+        return {
+            "topic": "high-school-physics",
+            "problem_family": "force-analysis",
+            "model_family": "force-analysis",
+            "stage_type": "contact-impact",
+            "simulation_mode": "stage-force-visualization",
+            "simulation_ready": True,
+            "reason": "题目涉及飞行到接触的受力切换，适合映射为分阶段受力 simulation。",
+        }
+    if _contains_any(text, ("腾空", "离地", "离开地面", "脱离", "离手", "起跳", "蹬地")):
+        return {
+            "topic": "high-school-physics",
+            "problem_family": "force-analysis",
+            "model_family": "force-analysis",
+            "stage_type": "contact-release",
+            "simulation_mode": "stage-force-visualization",
+            "simulation_ready": True,
+            "reason": "题目涉及接触到脱离接触的受力切换，适合映射为分阶段受力 simulation。",
         }
     return {
         "topic": "high-school-physics",

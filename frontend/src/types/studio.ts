@@ -30,6 +30,7 @@ export interface ArtifactVersion {
   createdAt: string;
   source: "system" | "conversation" | "inline-edit";
   document: RuntimeDocument;
+  htmlSource: string;
 }
 
 export interface ArtifactItem {

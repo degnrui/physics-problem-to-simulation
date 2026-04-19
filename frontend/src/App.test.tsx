@@ -14,23 +14,35 @@ function createJsonResponse(payload: unknown) {
 }
 
 function mockFetchWithRunState() {
-  const fetchMock = vi.fn((input: RequestInfo | URL) => {
+  let deleted = false;
+
+  const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
 
     if (url.endsWith("/api/problem-to-simulation/runs")) {
       return createJsonResponse({
-        items: [
-          {
-            run_id: "run-1",
-            title: "双绳弹力位移演示",
-            status: "completed",
-            updated_at: "2026-04-18T15:00:00Z",
-            problem_family: "elastic-motion",
-            model_family: "双绳弹力模型",
-            simulation_mode: "interactive",
-            export_ready: true,
-          },
-        ],
+        items: deleted
+          ? []
+          : [
+              {
+                run_id: "run-1",
+                title: "双绳弹力位移演示",
+                status: "completed",
+                updated_at: "2026-04-18T15:00:00Z",
+                problem_family: "elastic-motion",
+                model_family: "双绳弹力模型",
+                simulation_mode: "interactive",
+                export_ready: true,
+              },
+            ],
+      });
+    }
+
+    if (url.endsWith("/api/problem-to-simulation/runs/run-1") && init?.method === "DELETE") {
+      deleted = true;
+      return createJsonResponse({
+        run_id: "run-1",
+        deleted: true,
       });
     }
 
@@ -119,7 +131,7 @@ describe("simulation studio shell", () => {
     render(<App />);
 
     expect(await screen.findByText("ClassSim")).toBeInTheDocument();
-    expect(screen.getByText(/teacher simulation studio/i)).toBeInTheDocument();
+    expect(screen.queryByText(/teacher simulation studio/i)).not.toBeInTheDocument();
     expect(
       screen.queryByRole("heading", { name: "把物理题目转成可教学的 simulation" }),
     ).not.toBeInTheDocument();
@@ -127,6 +139,136 @@ describe("simulation studio shell", () => {
     expect(screen.queryByLabelText("生成模式")).not.toBeInTheDocument();
     expect(screen.queryByTestId("preview-panel")).not.toBeInTheDocument();
     expect(screen.queryByText("双绳弹力位移演示")).not.toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "题目输入" })).toHaveValue(
+      "如图所示，两根相同的橡皮绳连接物块，沿 AB 中垂线拉至 O 点后释放。请生成一个适合课堂讲评的 simulation，突出回复力方向、摩擦耗能和教学观察顺序。",
+    );
+  });
+
+  it("starts a run directly from the home stage with the starter prompt", async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+
+      if (url.endsWith("/api/problem-to-simulation/runs") && init?.method === "POST") {
+        return createJsonResponse({
+          run_id: "run-new",
+          status: "queued",
+          route: "/simulation/run-new",
+          status_url: "/api/problem-to-simulation/runs/run-new",
+        });
+      }
+
+      if (url.endsWith("/api/problem-to-simulation/runs")) {
+        return createJsonResponse({ items: [] });
+      }
+
+      return Promise.reject(new Error(`Unhandled URL: ${url}`));
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+    window.history.pushState({}, "", "/");
+    const user = userEvent.setup();
+
+    render(<App />);
+
+    const submitButton = await screen.findByRole("button", { name: "开始生成" });
+    expect(submitButton).toBeEnabled();
+
+    await user.click(submitButton);
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe("/simulation/run-new");
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/problem-to-simulation/runs",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
+  it("starts a run after entering a custom prompt", async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+
+      if (url.endsWith("/api/problem-to-simulation/runs") && init?.method === "POST") {
+        return createJsonResponse({
+          run_id: "run-custom",
+          status: "queued",
+          route: "/simulation/run-custom",
+          status_url: "/api/problem-to-simulation/runs/run-custom",
+        });
+      }
+
+      if (url.endsWith("/api/problem-to-simulation/runs")) {
+        return createJsonResponse({ items: [] });
+      }
+
+      return Promise.reject(new Error(`Unhandled URL: ${url}`));
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+    window.history.pushState({}, "", "/");
+    const user = userEvent.setup();
+
+    render(<App />);
+
+    const promptInput = screen.getByRole("textbox", { name: "题目输入" });
+    await user.clear(promptInput);
+    await user.type(promptInput, "请把平抛运动题做成课堂演示 simulation");
+    await user.click(screen.getByRole("button", { name: "开始生成" }));
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe("/simulation/run-custom");
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/problem-to-simulation/runs",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          text: "请把平抛运动题做成课堂演示 simulation",
+          mode: "llm-assisted",
+        }),
+      }),
+    );
+  });
+
+  it("shows an error message when run creation fails", async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+
+      if (url.endsWith("/api/problem-to-simulation/runs") && init?.method === "POST") {
+        return Promise.resolve(
+          new Response("backend unavailable", {
+            status: 503,
+            headers: { "Content-Type": "text/plain" },
+          }),
+        );
+      }
+
+      if (url.endsWith("/api/problem-to-simulation/runs")) {
+        return createJsonResponse({ items: [] });
+      }
+
+      return Promise.reject(new Error(`Unhandled URL: ${url}`));
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+    window.history.pushState({}, "", "/");
+    const user = userEvent.setup();
+
+    render(<App />);
+
+    const promptInput = screen.getByRole("textbox", { name: "题目输入" });
+    await user.clear(promptInput);
+    await user.type(promptInput, "测试失败提示");
+    await user.click(screen.getByRole("button", { name: "开始生成" }));
+
+    expect(await screen.findByText("生成失败，请检查后端服务或稍后重试。")).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/problem-to-simulation/runs",
+      expect.objectContaining({ method: "POST" }),
+    );
   });
 
   it("opens the preview panel automatically when a run is completed", async () => {
@@ -162,6 +304,29 @@ describe("simulation studio shell", () => {
     expect(await screen.findByTestId("preview-panel")).toBeInTheDocument();
   });
 
+  it("updates the rendered html after editing code mode", async () => {
+    mockFetchWithRunState();
+    window.history.pushState({}, "", "/simulation/run-1");
+    const user = userEvent.setup();
+
+    render(<App />);
+
+    expect(await screen.findByTestId("preview-panel")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "代码" }));
+
+    const editor = screen.getByRole("textbox", { name: "HTML 代码编辑器" });
+    const nextSource = "<!DOCTYPE html><html lang=\"zh-CN\"><body><main>测试代码预览</main></body></html>";
+    await user.clear(editor);
+    await user.type(editor, nextSource);
+
+    await user.click(screen.getByRole("button", { name: "预览" }));
+
+    const frame = screen.getByTitle("simulation-runtime.html");
+    expect(frame).toHaveAttribute("srcdoc");
+    expect(frame.getAttribute("srcdoc")).toContain("测试代码预览");
+  });
+
   it("returns to the home stage when clicking the expanded sidebar brand", async () => {
     mockFetchWithRunState();
     window.history.pushState({}, "", "/simulation/run-1");
@@ -170,16 +335,59 @@ describe("simulation studio shell", () => {
     render(<App />);
 
     expect(await screen.findByTestId("preview-panel")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "教师账户" })).not.toBeInTheDocument();
+    expect(screen.getByText("dengrui")).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "收起侧边栏" })).toHaveLength(1);
     expect(document.querySelector(".sidebar-conversation-card")).toBeNull();
 
     await user.click(await screen.findByRole("button", { name: "ClassSim 返回首页" }));
 
-    expect(screen.getByText(/teacher simulation studio/i)).toBeInTheDocument();
+    expect(screen.getByText("ClassSim")).toBeInTheDocument();
     expect(
       screen.queryByRole("heading", { name: "把物理题目转成可教学的 simulation" }),
     ).not.toBeInTheDocument();
     expect(window.location.pathname).toBe("/");
+  });
+
+  it("shows the quick-action menu on hover and keeps the selected option visible", async () => {
+    mockFetchWithRunState();
+    window.history.pushState({}, "", "/");
+    const user = userEvent.setup();
+
+    render(<App />);
+
+    const trigger = screen.getByRole("button", { name: "添加内容" });
+    await user.hover(trigger);
+    expect(screen.getByRole("button", { name: "添加照片或文件" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "网页搜索" })).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "网页搜索" }));
+    expect(await screen.findByText("网页搜索")).toBeInTheDocument();
+
+    await user.unhover(trigger);
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "添加照片或文件" })).not.toBeInTheDocument();
+    });
+  });
+
+  it("deletes the current conversation and returns to the home stage", async () => {
+    const fetchMock = mockFetchWithRunState();
+    window.history.pushState({}, "", "/simulation/run-1");
+    const user = userEvent.setup();
+
+    render(<App />);
+
+    expect(await screen.findByTestId("preview-panel")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "删除会话 双绳弹力位移演示" }));
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe("/");
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/problem-to-simulation/runs/run-1",
+      expect.objectContaining({ method: "DELETE" }),
+    );
+    expect(screen.getByText("ClassSim")).toBeInTheDocument();
   });
 });

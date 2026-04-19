@@ -26,7 +26,6 @@ export function StudioBrand({ compact = false }: StudioBrandProps) {
         <BrandGlyph />
       </span>
       <span className="brand-name">ClassSim</span>
-      <span className="brand-tagline">TEACHER SIMULATION STUDIO</span>
     </span>
   );
 }

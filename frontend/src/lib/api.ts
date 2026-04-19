@@ -77,6 +77,11 @@ export interface ExportHtmlResponse {
   path: string;
 }
 
+export interface RunDeleteResponse {
+  run_id: string;
+  deleted: boolean;
+}
+
 async function handleJson<T>(response: Response): Promise<T> {
   if (!response.ok) {
     const message = await response.text();
@@ -109,6 +114,13 @@ export async function listRuns(): Promise<RunListResponse> {
 export async function getRunResult(runId: string): Promise<RunResultResponse> {
   const response = await fetch(`${API_BASE}/problem-to-simulation/runs/${runId}/result`);
   return handleJson<RunResultResponse>(response);
+}
+
+export async function deleteRun(runId: string): Promise<RunDeleteResponse> {
+  const response = await fetch(`${API_BASE}/problem-to-simulation/runs/${runId}`, {
+    method: "DELETE",
+  });
+  return handleJson<RunDeleteResponse>(response);
 }
 
 export async function getRunArtifact(

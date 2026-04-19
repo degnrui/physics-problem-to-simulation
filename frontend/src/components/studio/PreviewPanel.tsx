@@ -1,12 +1,13 @@
 import { buildHtmlSource } from "../../lib/studio";
 import type { ArtifactVersion, InlineEditTarget, RuntimeView } from "../../types/studio";
+import { HtmlRuntimeFrame } from "./HtmlRuntimeFrame";
 import { InlineEditOverlay } from "./InlineEditOverlay";
 import { RuntimeHeaderActions } from "./RuntimeHeaderActions";
-import { SimulationRuntimePanel } from "./SimulationRuntimePanel";
 
 interface PreviewPanelProps {
   versions: ArtifactVersion[];
   activeVersion: ArtifactVersion;
+  artifactName: string;
   runtimeView: RuntimeView;
   downloading: boolean;
   inlineEditTarget: InlineEditTarget | null;
@@ -20,11 +21,13 @@ interface PreviewPanelProps {
   onCancelInlineEdit: () => void;
   onSaveDirectEdit: (value: string) => void;
   onSaveAiEdit: (prompt: string) => void;
+  onChangeCode: (value: string) => void;
 }
 
 export function PreviewPanel({
   versions,
   activeVersion,
+  artifactName,
   runtimeView,
   downloading,
   inlineEditTarget,
@@ -38,7 +41,10 @@ export function PreviewPanel({
   onCancelInlineEdit,
   onSaveDirectEdit,
   onSaveAiEdit,
+  onChangeCode,
 }: PreviewPanelProps) {
+  const htmlSource = buildHtmlSource(activeVersion);
+
   return (
     <aside className="preview-panel" data-testid="preview-panel">
       <div className="relative flex h-full min-h-screen flex-col">
@@ -55,11 +61,21 @@ export function PreviewPanel({
           onClose={onClose}
         />
 
-        <div className="relative min-h-0 flex-1 overflow-y-auto px-5 py-5">
+        <div className="preview-panel-body relative min-h-0 flex-1 px-4 pb-4">
           {runtimeView === "preview" ? (
-            <SimulationRuntimePanel document={activeVersion.document} onRequestEdit={onRequestEdit} />
+            <HtmlRuntimeFrame title={artifactName} source={htmlSource} />
           ) : (
-            <pre className="code-preview-shell">{buildHtmlSource(activeVersion)}</pre>
+            <div className="code-editor-shell">
+              <textarea
+                id="runtime-code-editor"
+                name="runtime-code-editor"
+                aria-label="HTML 代码编辑器"
+                className="code-editor-textarea"
+                spellCheck={false}
+                value={htmlSource}
+                onChange={(event) => onChangeCode(event.target.value)}
+              />
+            </div>
           )}
 
           {runtimeView === "preview" && inlineEditTarget ? (

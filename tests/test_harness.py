@@ -1,17 +1,25 @@
 import json
 import os
+import socket
 import sys
 import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "backend"))
 
+from app.config import settings
 from app.main import app
 from app.domain.problem import ProblemInput
+from app.harness.model_executor import (
+    ModelExecutionTimeoutError,
+    ModelExecutor,
+    REQUEST_TIMEOUT_SECONDS,
+)
 from app.harness.orchestrator import (
     plan_problem_to_simulation,
     run_problem_to_simulation_harness,
@@ -39,6 +47,11 @@ ELASTIC_PROBLEM = (
     "已知CO距离为L，物块与桌面间的动摩擦因数为μ，橡皮绳始终处于弹性限度内，不计空气阻力。"
 )
 
+GENERIC_TRANSITION_PROBLEM = (
+    "篮球离开手后在空中飞向篮板，碰到篮板后反弹。"
+    "请比较篮球在飞行阶段和碰板阶段的受力情况，并说明哪些力发生了变化。"
+)
+
 
 class HarnessOrchestratorTests(unittest.TestCase):
     def test_plan_builds_simulation_route_for_staged_force_problem(self) -> None:
@@ -50,6 +63,15 @@ class HarnessOrchestratorTests(unittest.TestCase):
         self.assertEqual(result["planner"]["stage_type"], "cat-jump")
         self.assertEqual(result["task_plan"]["tasks"][0]["type"], "problem_profile")
         self.assertEqual(result["task_plan"]["tasks"][-1]["type"], "teaching_simulation_package")
+
+    def test_plan_builds_simulation_route_for_generic_contact_transition_problem(self) -> None:
+        result = plan_problem_to_simulation(
+            ProblemInput(text=GENERIC_TRANSITION_PROBLEM, topic_hint="force-analysis")
+        )
+
+        self.assertTrue(result["planner"]["simulation_ready"])
+        self.assertEqual(result["planner"]["problem_family"], "force-analysis")
+        self.assertEqual(result["planner"]["stage_type"], "contact-impact")
 
     def test_plan_builds_analysis_only_route_for_modeling_problem(self) -> None:
         result = plan_problem_to_simulation(
@@ -89,6 +111,21 @@ class HarnessOrchestratorTests(unittest.TestCase):
             self.assertIn("renderer_payload", final_package)
             self.assertIn("delivery_bundle", final_package)
             self.assertTrue((run_dir / "status.json").exists())
+
+    def test_run_builds_staged_force_scene_for_generic_contact_transition_problem(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            result = run_problem_to_simulation_harness(
+                ProblemInput(text=GENERIC_TRANSITION_PROBLEM, topic_hint="force-analysis"),
+                runs_root=Path(temp_dir),
+            )
+
+            self.assertEqual(result["planner"]["stage_type"], "contact-impact")
+            self.assertEqual(result["scene_spec"]["template_id"], "force-analysis-staged-v1")
+            parameters = result["scene_spec"]["parameters"]
+            stage_options = parameters["stage_options"]
+            self.assertEqual(len(stage_options), 2)
+            self.assertEqual(stage_options[0]["label"], "飞行阶段")
+            self.assertEqual(stage_options[1]["label"], "接触阶段")
 
     def test_plan_routes_projectile_problem_to_projectile_motion_family(self) -> None:
         result = plan_problem_to_simulation(
@@ -318,6 +355,246 @@ class HarnessApiTests(unittest.TestCase):
         self.assertIn("text/html", html_response.headers["content-type"])
         self.assertIn("Physics Problem to Simulation", html_response.text)
         self.assertIn("elastic-restoring-motion", html_response.text)
+
+
+class ModelExecutorTests(unittest.TestCase):
+    def test_execute_raises_immediately_on_socket_timeout_without_retry(self) -> None:
+        executor = ModelExecutor()
+        original_api_key = settings.openai_api_key
+
+        try:
+            settings.openai_api_key = "test-key"
+            with patch(
+                "urllib.request.urlopen",
+                side_effect=socket.timeout("timed out"),
+            ) as mocked_urlopen:
+                with self.assertRaises(ModelExecutionTimeoutError):
+                    executor.execute(
+                        worker_name="problem_profile",
+                        prompt="Extract JSON",
+                        required_keys=["summary"],
+                    )
+        finally:
+            settings.openai_api_key = original_api_key
+
+        self.assertEqual(mocked_urlopen.call_count, 1)
+        self.assertEqual(mocked_urlopen.call_args.kwargs["timeout"], REQUEST_TIMEOUT_SECONDS)
+
+    def test_execute_returns_debug_trace_when_enabled(self) -> None:
+        executor = ModelExecutor()
+        original_api_key = settings.openai_api_key
+
+        class _FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self) -> bytes:
+                return json.dumps(
+                    {
+                        "choices": [
+                            {
+                                "message": {
+                                    "content": json.dumps({"summary": "ok"}),
+                                    "reasoning_content": "thinking...",
+                                }
+                            }
+                        ]
+                    }
+                ).encode("utf-8")
+
+        try:
+            settings.openai_api_key = "test-key"
+            with patch("urllib.request.urlopen", return_value=_FakeResponse()):
+                payload, metadata = executor.execute(
+                    worker_name="problem_profile",
+                    prompt="Extract JSON",
+                    required_keys=["summary"],
+                    debug=True,
+                )
+        finally:
+            settings.openai_api_key = original_api_key
+
+        self.assertEqual(payload, {"summary": "ok"})
+        self.assertIn("debug_trace", metadata)
+        trace = metadata["debug_trace"]
+        self.assertEqual(trace["worker_name"], "problem_profile")
+        self.assertEqual(trace["response"]["reasoning_content"], "thinking...")
+        self.assertEqual(trace["response"]["parsed_candidate"], {"summary": "ok"})
+        self.assertEqual(trace["request_payload"]["messages"][-1]["content"], "Extract JSON")
+
+    def test_execute_timeout_error_carries_debug_trace(self) -> None:
+        executor = ModelExecutor()
+        original_api_key = settings.openai_api_key
+
+        try:
+            settings.openai_api_key = "test-key"
+            with patch(
+                "urllib.request.urlopen",
+                side_effect=socket.timeout("timed out"),
+            ):
+                with self.assertRaises(ModelExecutionTimeoutError) as context:
+                    executor.execute(
+                        worker_name="physics_model",
+                        prompt="Build JSON",
+                        required_keys=["model_type"],
+                        debug=True,
+                    )
+        finally:
+            settings.openai_api_key = original_api_key
+
+        self.assertEqual(
+            context.exception.debug_trace["request_payload"]["messages"][-1]["content"],
+            "Build JSON",
+        )
+        self.assertEqual(context.exception.debug_trace["error"]["type"], "timeout")
+
+
+class HarnessDebugTraceTests(unittest.TestCase):
+    def test_debug_run_writes_llm_trace_artifacts(self) -> None:
+        original_api_key = settings.openai_api_key
+
+        class _FakeResponse:
+            def __init__(self, payload: dict) -> None:
+                self.payload = payload
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self) -> bytes:
+                return json.dumps(self.payload, ensure_ascii=False).encode("utf-8")
+
+        responses = [
+            _FakeResponse(
+                {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": json.dumps(
+                                    {
+                                        "summary": "钢球滚下斜面后做平抛并击中可调木板",
+                                        "research_object": "钢球",
+                                        "scenario": "斜面出射后的平抛运动",
+                                        "stages": [
+                                            {
+                                                "id": "stage-1",
+                                                "label": "斜面滚下与出射",
+                                                "description": "钢球从斜面滚下并水平出射",
+                                                "contact_state": "与斜面/桌面接触",
+                                                "key_question": "出射瞬间初速度如何确定？",
+                                            },
+                                            {
+                                                "id": "stage-2",
+                                                "label": "平抛飞行与击板",
+                                                "description": "钢球离台后做平抛并击中木板",
+                                                "contact_state": "空中飞行",
+                                                "key_question": "h 改变时飞行时间和速度方向如何变化？",
+                                            },
+                                        ],
+                                        "topic": "high-school-physics",
+                                        "problem_family": "projectile-motion",
+                                        "model_family": "projectile-motion",
+                                        "stage_type": "projectile-board-impact",
+                                        "simulation_mode": "trajectory-lab",
+                                        "simulation_ready": True,
+                                    },
+                                    ensure_ascii=False,
+                                ),
+                                "reasoning_content": "profile reasoning",
+                            }
+                        }
+                    ]
+                }
+            ),
+            _FakeResponse(
+                {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": json.dumps(
+                                    {
+                                        "model_type": "projectile_motion",
+                                        "research_object": "钢球",
+                                        "force_cases": [
+                                            {
+                                                "stage_id": "stage-1",
+                                                "forces": ["重力", "支持力"],
+                                            },
+                                            {
+                                                "stage_id": "stage-2",
+                                                "forces": ["重力"],
+                                            },
+                                        ],
+                                        "misconceptions": ["误以为 h 改变不会影响末速度方向"],
+                                        "derived_quantities": {
+                                            "time_of_flight": "sqrt(2h/g)",
+                                            "horizontal_displacement": "x=v0*sqrt(2h/g)",
+                                            "vertical_speed": "vy=sqrt(2gh)",
+                                        },
+                                        "knowledge_points": ["平抛运动", "运动分解"],
+                                        "option_analysis": {"A": "错误", "B": "正确"},
+                                    },
+                                    ensure_ascii=False,
+                                ),
+                                "reasoning_content": "model reasoning",
+                            }
+                        }
+                    ]
+                }
+            ),
+            _FakeResponse(
+                {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": json.dumps(
+                                    {
+                                        "classroom_use": "选项辨析 + 参数探究",
+                                        "primary_goal": "显化 h、t、x 和末速度方向之间的关系",
+                                        "observation_targets": ["飞行时间变化", "末速度方向变化"],
+                                        "teacher_prompts": ["拖动 h 观察轨迹", "对照公式面板解释变化"],
+                                    },
+                                    ensure_ascii=False,
+                                ),
+                                "reasoning_content": "teaching reasoning",
+                            }
+                        }
+                    ]
+                }
+            ),
+        ]
+
+        try:
+            settings.openai_api_key = "test-key"
+            with tempfile.TemporaryDirectory() as temp_dir:
+                with patch("urllib.request.urlopen", side_effect=responses):
+                    result = run_problem_to_simulation_harness(
+                        ProblemInput(
+                            text=PROJECTILE_PROBLEM,
+                            topic_hint="high-school-physics",
+                            mode="llm-assisted",
+                            debug=True,
+                        ),
+                        runs_root=Path(temp_dir),
+                    )
+
+                run_dir = Path(temp_dir) / result["run_id"]
+                for worker_name in ("problem_profile", "physics_model", "teaching_plan"):
+                    trace_path = run_dir / "artifacts" / f"llm_debug_{worker_name}.json"
+                    self.assertTrue(trace_path.exists(), msg=f"missing {trace_path}")
+                    trace = json.loads(trace_path.read_text(encoding="utf-8"))
+                    self.assertEqual(trace["worker_name"], worker_name)
+                    self.assertIn("request_payload", trace)
+                    self.assertIn("response", trace)
+                    self.assertIn("elapsed_ms", trace)
+                    self.assertIsNotNone(trace["response"]["reasoning_content"])
+        finally:
+            settings.openai_api_key = original_api_key
 
 
 if __name__ == "__main__":

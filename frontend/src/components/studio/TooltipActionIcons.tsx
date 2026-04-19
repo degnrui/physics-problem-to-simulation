@@ -1,11 +1,21 @@
-const actionItems = [
-  { id: "upload", label: "上传附件", icon: "clip" },
-  { id: "template", label: "教学模板", icon: "stack" },
-  { id: "mode", label: "模式选择", icon: "spark" },
-  { id: "type", label: "simulation 类型", icon: "orbit" },
-];
+import { useEffect, useRef, useState } from "react";
 
-function ActionGlyph({ kind }: { kind: "clip" | "stack" | "spark" | "orbit" }) {
+const actionItems = [
+  { id: "upload", label: "添加照片或文件", icon: "clip" },
+  { id: "search", label: "网页搜索", icon: "search" },
+] as const;
+
+type ActionKind = "plus" | "clip" | "search";
+
+function ActionGlyph({ kind }: { kind: ActionKind }) {
+  if (kind === "plus") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true" className="action-glyph">
+        <path d="M12 5v14M5 12h14" />
+      </svg>
+    );
+  }
+
   if (kind === "clip") {
     return (
       <svg viewBox="0 0 24 24" aria-hidden="true" className="action-glyph">
@@ -14,40 +24,91 @@ function ActionGlyph({ kind }: { kind: "clip" | "stack" | "spark" | "orbit" }) {
     );
   }
 
-  if (kind === "stack") {
-    return (
-      <svg viewBox="0 0 24 24" aria-hidden="true" className="action-glyph">
-        <path d="M12 4 20 8 12 12 4 8 12 4Z" />
-        <path d="M4 12 12 16 20 12" />
-        <path d="M4 16 12 20 20 16" />
-      </svg>
-    );
-  }
-
-  if (kind === "spark") {
-    return (
-      <svg viewBox="0 0 24 24" aria-hidden="true" className="action-glyph">
-        <path d="M12 4 13.5 8.5 18 10 13.5 11.5 12 16 10.5 11.5 6 10 10.5 8.5 12 4Z" />
-      </svg>
-    );
-  }
-
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" className="action-glyph">
-      <circle cx="12" cy="12" r="2.2" />
-      <path d="M12 3.8v3.1M12 17.1v3.1M3.8 12h3.1M17.1 12h3.1M6.3 6.3l2.2 2.2M15.5 15.5l2.2 2.2M17.7 6.3l-2.2 2.2M8.5 15.5l-2.2 2.2" />
+      <circle cx="11" cy="11" r="5.5" />
+      <path d="M15.4 15.4 19 19" />
     </svg>
   );
 }
 
 export function TooltipActionIcons() {
+  const [selectedAction, setSelectedAction] = useState<(typeof actionItems)[number] | null>(null);
+  const [hovered, setHovered] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const closeTimeoutRef = useRef<number | null>(null);
+
+  const menuVisible = hovered || expanded;
+  const handleSelectAction = (item: (typeof actionItems)[number]) => {
+    if (closeTimeoutRef.current) {
+      window.clearTimeout(closeTimeoutRef.current);
+      closeTimeoutRef.current = null;
+    }
+    setSelectedAction(item);
+    setHovered(false);
+    setExpanded(false);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (closeTimeoutRef.current) {
+        window.clearTimeout(closeTimeoutRef.current);
+      }
+    };
+  }, []);
+
   return (
-    <div className="flex items-center gap-2">
-      {actionItems.map((item) => (
-        <button key={item.id} type="button" className="icon-tooltip-button" title={item.label} aria-label={item.label}>
-          <ActionGlyph kind={item.icon as "clip" | "stack" | "spark" | "orbit"} />
+    <div
+      className="quick-action-shell"
+      onMouseEnter={() => {
+        if (closeTimeoutRef.current) {
+          window.clearTimeout(closeTimeoutRef.current);
+          closeTimeoutRef.current = null;
+        }
+        setHovered(true);
+      }}
+      onMouseLeave={() => {
+        if (closeTimeoutRef.current) {
+          window.clearTimeout(closeTimeoutRef.current);
+        }
+        closeTimeoutRef.current = window.setTimeout(() => {
+          setHovered(false);
+          setExpanded(false);
+          closeTimeoutRef.current = null;
+        }, 90);
+      }}
+    >
+      <div className="quick-action-trigger-row">
+        <button
+          type="button"
+          className="quick-action-trigger"
+          aria-label="添加内容"
+          aria-expanded={menuVisible}
+          onClick={() => setExpanded((value) => !value)}
+        >
+          <ActionGlyph kind="plus" />
         </button>
-      ))}
+        {selectedAction ? <span className="quick-action-selection">{selectedAction.label}</span> : null}
+      </div>
+
+      {menuVisible ? (
+        <div className="quick-action-menu" data-visible={menuVisible}>
+          {actionItems.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className="quick-action-option"
+              onMouseDown={() => handleSelectAction(item)}
+              onClick={() => handleSelectAction(item)}
+            >
+              <span className="quick-action-option-icon">
+                <ActionGlyph kind={item.icon} />
+              </span>
+              <span>{item.label}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

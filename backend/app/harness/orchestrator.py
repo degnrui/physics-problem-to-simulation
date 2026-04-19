@@ -1,4 +1,5 @@
 import json
+import shutil
 from contextlib import suppress
 import threading
 import uuid
@@ -9,7 +10,7 @@ from typing import Any, Dict, Optional, Tuple
 from app.domain.problem import ProblemInput
 from app.harness.artifact_store import ArtifactStore
 from app.harness.html_export import write_export_html
-from app.harness.model_executor import ModelExecutor
+from app.harness.model_executor import ModelExecutionTimeoutError, ModelExecutor
 from app.harness.run_logger import RunLogger
 from app.harness.run_state import RunStateStore
 from app.harness.task_registry import build_task_plan
@@ -85,6 +86,8 @@ def _generation_record(metadata: Dict[str, Any], artifact_name: str) -> Dict[str
 def _run_llm_enhanced_worker(
     *,
     use_llm: bool,
+    artifact_store: ArtifactStore,
+    debug: bool,
     worker_name: str,
     artifact_name: str,
     prompt: str,
@@ -98,11 +101,19 @@ def _run_llm_enhanced_worker(
     }
     if use_llm:
         executor = ModelExecutor()
-        llm_output, metadata = executor.execute(
-            worker_name=worker_name,
-            prompt=prompt,
-            required_keys=required_keys,
-        )
+        try:
+            llm_output, metadata = executor.execute(
+                worker_name=worker_name,
+                prompt=prompt,
+                required_keys=required_keys,
+                debug=debug,
+            )
+        except ModelExecutionTimeoutError as exc:
+            if debug:
+                artifact_store.write_artifact(f"llm_debug_{worker_name}", exc.debug_trace)
+            raise
+        if debug and metadata.get("debug_trace") is not None:
+            artifact_store.write_artifact(f"llm_debug_{worker_name}", metadata["debug_trace"])
         if metadata["execution_mode"] == "llm-assisted":
             return llm_output, metadata, _generation_record(metadata, artifact_name)
 
@@ -186,6 +197,8 @@ def run_problem_to_simulation_harness_for_run(
         state_store.mark_running(1, "modeling")
         problem_profile, profile_meta, profile_trace = _run_llm_enhanced_worker(
             use_llm=use_llm,
+            artifact_store=artifact_store,
+            debug=problem.debug,
             worker_name="problem_profile",
             artifact_name="problem_profile",
             prompt=f"Extract a problem profile JSON from: {problem.text}",
@@ -217,6 +230,8 @@ def run_problem_to_simulation_harness_for_run(
         state_store.mark_running(2, "pedagogy")
         physics_model, model_meta, model_trace = _run_llm_enhanced_worker(
             use_llm=use_llm,
+            artifact_store=artifact_store,
+            debug=problem.debug,
             worker_name="physics_model",
             artifact_name="physics_model",
             prompt=f"Build a physics model JSON from profile: {json.dumps(problem_profile, ensure_ascii=False)}",
@@ -248,6 +263,8 @@ def run_problem_to_simulation_harness_for_run(
         next_task_index = 3
         teaching_plan, teaching_meta, teaching_trace = _run_llm_enhanced_worker(
             use_llm=use_llm,
+            artifact_store=artifact_store,
+            debug=problem.debug,
             worker_name="teaching_plan",
             artifact_name="teaching_plan",
             prompt=(
@@ -546,6 +563,22 @@ def export_run_html(run_id: str, *, runs_root: Optional[Path] = None) -> Dict[st
 def export_html_path(run_id: str, *, runs_root: Optional[Path] = None) -> Path:
     root = runs_root or _default_runs_root()
     return root / run_id / "exports" / "simulation.html"
+
+
+def delete_run(run_id: str, *, runs_root: Optional[Path] = None) -> Dict[str, Any]:
+    root = (runs_root or _default_runs_root()).resolve()
+    run_dir = (root / run_id).resolve()
+
+    if run_dir.parent != root or not run_dir.exists() or not run_dir.is_dir():
+        raise FileNotFoundError(run_id)
+
+    with _RUN_LOCK:
+        shutil.rmtree(run_dir)
+
+    return {
+        "run_id": run_id,
+        "deleted": True,
+    }
 
 
 def list_recent_runs(*, runs_root: Optional[Path] = None, limit: int = 12) -> Dict[str, Any]:

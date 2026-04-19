@@ -75,10 +75,10 @@ export function UtilityRail({
         <RailButton label={expanded ? "收起侧边栏" : "展开侧边栏"} onClick={onToggleSidebar}>
           <RailGlyph kind="sidebar" />
         </RailButton>
-        <RailButton label="新建会话" onClick={onNewConversation}>
+        <RailButton label="新建聊天" onClick={onNewConversation}>
           <RailGlyph kind="plus" />
         </RailButton>
-        <RailButton label="搜索会话" onClick={onSearchConversation}>
+        <RailButton label="搜索聊天" onClick={onSearchConversation}>
           <RailGlyph kind="search" />
         </RailButton>
       </div>

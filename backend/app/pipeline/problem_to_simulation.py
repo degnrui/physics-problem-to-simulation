@@ -6,6 +6,10 @@ from app.domain.problem import ProblemInput, ProblemStage, StructuredProblem
 from app.domain.scene import ProblemToSimulationResult, SimulationScene, StageLog
 
 
+def _contains_any(text: str, keywords: Tuple[str, ...]) -> bool:
+    return any(keyword in text for keyword in keywords)
+
+
 def _extract_known_conditions(text: str) -> List[str]:
     knowns: List[str] = []
     patterns = [
@@ -46,6 +50,12 @@ def _extract_research_object(text: str) -> str:
         return "小猫"
     if "足球" in text:
         return "足球"
+    if "篮球" in text:
+        return "篮球"
+    if "排球" in text:
+        return "排球"
+    if "钢球" in text:
+        return "钢球"
     if "木块" in text:
         return "木块"
     if "物块" in text:
@@ -60,6 +70,13 @@ def _extract_scenario(text: str) -> str:
         return "接触到腾空的分阶段受力"
     if "足球" in text and "触网" in text:
         return "飞行到触网的分阶段受力"
+    if _contains_any(text, ("飞行", "空中")) and _contains_any(
+        text,
+        ("触网", "触板", "碰到", "碰板", "撞到", "撞击", "击中", "落地", "着地", "接触", "反弹"),
+    ):
+        return "飞行到接触的分阶段受力"
+    if _contains_any(text, ("腾空", "离地", "离开地面", "脱离", "离手", "起跳", "蹬地")):
+        return "接触到脱离接触的分阶段受力"
     if "水平面" in text:
         return "粗糙水平面受力"
     if "斜面" in text:
@@ -74,6 +91,13 @@ def _detect_stage_type(text: str) -> str:
         return "cat-jump"
     if "足球" in text and "触网" in text:
         return "football-net"
+    if _contains_any(text, ("飞行", "空中")) and _contains_any(
+        text,
+        ("触网", "触板", "碰到", "碰板", "撞到", "撞击", "击中", "落地", "着地", "接触", "反弹"),
+    ):
+        return "contact-impact"
+    if _contains_any(text, ("腾空", "离地", "离开地面", "脱离", "离手", "起跳", "蹬地")):
+        return "contact-release"
     return "single-stage"
 
 
@@ -111,6 +135,40 @@ def _build_problem_stages(text: str) -> List[ProblemStage]:
                 description="足球与球网接触并发生形变。",
                 contact_state="与球网接触",
                 key_question="触网时新增了什么接触力？",
+            ),
+        ]
+    if stage_type == "contact-impact":
+        return [
+            ProblemStage(
+                id="stage-1",
+                label="飞行阶段",
+                description="研究对象脱离施力物后在空中运动，尚未与新物体接触。",
+                contact_state="无接触或仅受场力",
+                key_question="飞行阶段保留了哪些非接触力？",
+            ),
+            ProblemStage(
+                id="stage-2",
+                label="接触阶段",
+                description="研究对象与篮板、地面、球网等外物接触并发生相互作用。",
+                contact_state="与外物接触",
+                key_question="接触后新增了哪些接触力？",
+            ),
+        ]
+    if stage_type == "contact-release":
+        return [
+            ProblemStage(
+                id="stage-1",
+                label="接触阶段",
+                description="研究对象仍与地面、手或支撑面接触。",
+                contact_state="与外物接触",
+                key_question="接触阶段有哪些接触力存在？",
+            ),
+            ProblemStage(
+                id="stage-2",
+                label="脱离接触阶段",
+                description="研究对象离开原先接触物后继续运动。",
+                contact_state="脱离接触",
+                key_question="脱离接触后哪些力会消失，哪些力仍保留？",
             ),
         ]
     return [
@@ -249,6 +307,56 @@ def _build_force_cases(structured: StructuredProblem, problem_text: str) -> Tupl
             ],
             {"stage_type": "football-net", "focus": "飞行与接触的受力对比"},
         )
+    if stage_type == "contact-impact":
+        return (
+            [
+                ForceCase(
+                    stage_id="stage-1",
+                    stage_label="飞行阶段",
+                    forces=[
+                        ForceItem(name="重力", direction="竖直向下", magnitude="mg", category="field"),
+                    ],
+                    motion_state="未与外物接触时，通常只保留重力等非接触力。",
+                    focus="先判断是否存在接触，再决定是否有支持力、弹力或压力。",
+                ),
+                ForceCase(
+                    stage_id="stage-2",
+                    stage_label="接触阶段",
+                    forces=[
+                        ForceItem(name="重力", direction="竖直向下", magnitude="mg", category="field"),
+                        ForceItem(name="接触力", direction="与接触形变或法线方向相关", magnitude="F_contact", category="contact"),
+                    ],
+                    motion_state="接触后新增接触力，合力大小和方向随接触情况改变。",
+                    focus="接触是新增弹力、支持力或压力的前提。",
+                ),
+            ],
+            {"stage_type": "contact-impact", "focus": "飞行到接触时的受力增量"},
+        )
+    if stage_type == "contact-release":
+        return (
+            [
+                ForceCase(
+                    stage_id="stage-1",
+                    stage_label="接触阶段",
+                    forces=[
+                        ForceItem(name="重力", direction="竖直向下", magnitude="mg", category="field"),
+                        ForceItem(name="接触力", direction="由接触面提供", magnitude="F_contact", category="contact"),
+                    ],
+                    motion_state="与外物接触时，同时存在重力和相应接触力。",
+                    focus="先列出接触力，再判断是否存在摩擦、支持或弹力。",
+                ),
+                ForceCase(
+                    stage_id="stage-2",
+                    stage_label="脱离接触阶段",
+                    forces=[
+                        ForceItem(name="重力", direction="竖直向下", magnitude="mg", category="field"),
+                    ],
+                    motion_state="脱离接触后，原有接触力消失，只保留非接触力。",
+                    focus="接触状态变化会直接导致支持力、弹力等接触力消失。",
+                ),
+            ],
+            {"stage_type": "contact-release", "focus": "接触到脱离接触时的受力变化"},
+        )
 
     single_stage_forces, derived = _single_stage_forces(problem_text)
     return (
@@ -345,6 +453,8 @@ def _scene_compiler(model: PhysicsModel) -> Tuple[SimulationScene, StageLog]:
             "surface_type": "staged-force-analysis" if len(model.force_cases) > 1 else "horizontal",
             "active_stage_id": active_case.stage_id,
             "stage_options": stage_options,
+            "research_object": model.research_object,
+            "scenario": model.scenario,
             "forces_by_stage": _force_cases_to_stage_map(model.force_cases),
             "motion_state_by_stage": {
                 case.stage_id: case.motion_state for case in model.force_cases

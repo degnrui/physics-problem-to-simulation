@@ -13,6 +13,7 @@ import type {
 } from "../types/studio";
 
 const SESSION_STORAGE_KEY = "simulation-studio-sessions";
+const HIDDEN_RUN_IDS_STORAGE_KEY = "simulation-studio-hidden-runs";
 
 const STAGE_LIBRARY: StagePresentation[] = [
   {
@@ -105,6 +106,32 @@ export function saveStoredSessions(sessions: Record<string, ConversationSessionD
   }
 
   window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(sessions));
+}
+
+export function loadHiddenRunIds(): string[] {
+  if (typeof window === "undefined") {
+    return [];
+  }
+
+  try {
+    const raw = window.localStorage.getItem(HIDDEN_RUN_IDS_STORAGE_KEY);
+    if (!raw) {
+      return [];
+    }
+
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.map((item) => String(item)) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveHiddenRunIds(runIds: string[]) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.setItem(HIDDEN_RUN_IDS_STORAGE_KEY, JSON.stringify(runIds));
 }
 
 export function getStageMode(status: RunStatusResponse | null): StudioStageMode {
@@ -204,6 +231,7 @@ export function createArtifactVersion(
     createdAt: new Date().toISOString(),
     source,
     document,
+    htmlSource: composeHtmlSource(label, document),
   };
 }
 
@@ -268,10 +296,10 @@ export function buildConversationMessages(input: {
 
   if (input.summary) {
     baseMessages.push({
-      id: "system-summary",
-      role: "system",
+      id: "system-prompt",
+      role: "user",
       kind: "text",
-      text: `当前会话围绕「${input.summary.title}」展开。主交互入口是会话，中间记录修改，右侧用于验证 runtime。`,
+      text: input.summary.title,
       createdAt: input.summary.updatedAt ?? new Date().toISOString(),
     });
   }
@@ -384,41 +412,478 @@ export function formatTimestamp(value: string | null) {
 }
 
 export function buildHtmlSource(version: ArtifactVersion) {
-  const { document } = version;
+  return version.htmlSource || composeHtmlSource(version.label, version.document);
+}
+
+function escapeHtml(value: string) {
+  return value.replace(/[&<>"']/g, (character) => {
+    switch (character) {
+      case "&":
+        return "&amp;";
+      case "<":
+        return "&lt;";
+      case ">":
+        return "&gt;";
+      case '"':
+        return "&quot;";
+      case "'":
+        return "&#39;";
+      default:
+        return character;
+    }
+  });
+}
+
+function composeHtmlSource(label: string, document: RuntimeDocument) {
+  const observationMarkup =
+    document.observationTargets.length > 0
+      ? document.observationTargets
+          .map(
+            (item) =>
+              `<li><span class="dot"></span><span>${escapeHtml(item)}</span></li>`,
+          )
+          .join("")
+      : `<li><span class="dot"></span><span>${escapeHtml(document.focusArea)}</span></li>`;
+
+  const scriptMarkup =
+    document.teacherScript.length > 0
+      ? document.teacherScript
+          .slice(0, 3)
+          .map(
+            (item) =>
+              `<li><span class="dot accent"></span><span>${escapeHtml(item)}</span></li>`,
+          )
+          .join("")
+      : `<li><span class="dot accent"></span><span>${escapeHtml(document.callout)}</span></li>`;
 
   return `<!DOCTYPE html>
 <html lang="zh-CN">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>${document.title}</title>
+    <title>${escapeHtml(document.title)}</title>
     <style>
-      body { font-family: "Noto Sans SC", sans-serif; margin: 0; padding: 48px; background: #f5f1e8; color: #25313b; }
-      main { max-width: 980px; margin: 0 auto; background: #fffdfa; border: 1px solid #d9ddd6; border-radius: 28px; padding: 32px; }
-      h1 { margin: 0 0 12px; font-size: 34px; }
-      p { line-height: 1.8; }
-      .chip { display: inline-flex; align-items: center; padding: 6px 12px; border-radius: 999px; background: #e4eee7; margin-right: 8px; }
-      .panel { margin-top: 24px; padding: 20px; border-radius: 20px; background: #f8f4ed; }
+      :root {
+        --bg: #f3efe6;
+        --panel: rgba(255, 253, 248, 0.92);
+        --panel-strong: #ffffff;
+        --line: #d8ddd8;
+        --ink: #22343f;
+        --muted: #596a73;
+        --soft: #edf5ef;
+        --accent: #2f6d61;
+        --accent-soft: #dceee7;
+        --warm: #ff8748;
+        --shadow: 0 22px 54px rgba(35, 53, 54, 0.09);
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; min-height: 100%; font-family: "Noto Sans SC", "PingFang SC", sans-serif; background: var(--bg); color: var(--ink); }
+      body {
+        background:
+          radial-gradient(circle at top left, rgba(222, 239, 228, 0.9), transparent 26%),
+          radial-gradient(circle at bottom right, rgba(216, 235, 244, 0.8), transparent 30%),
+          linear-gradient(180deg, #f7f3ea 0%, #eef5f7 100%);
+      }
+      .page {
+        width: min(1180px, calc(100vw - 40px));
+        margin: 20px auto;
+        padding: 22px;
+        border: 1px solid var(--line);
+        border-radius: 28px;
+        background: rgba(255, 252, 246, 0.82);
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(12px);
+      }
+      .hero {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 18px;
+        margin-bottom: 18px;
+      }
+      .hero-copy { min-width: 0; }
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 12px;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+      }
+      .eyebrow::before {
+        content: "";
+        width: 5px;
+        height: 22px;
+        border-radius: 999px;
+        background: var(--warm);
+      }
+      h1 {
+        margin: 0;
+        font-size: clamp(28px, 3vw, 46px);
+        line-height: 1.08;
+      }
+      .subtitle {
+        margin: 14px 0 0;
+        max-width: 760px;
+        color: var(--muted);
+        font-size: 17px;
+        line-height: 1.8;
+      }
+      .badge {
+        flex: none;
+        border-radius: 999px;
+        background: var(--accent-soft);
+        padding: 14px 20px;
+        color: var(--accent);
+        font-size: 13px;
+        font-weight: 700;
+      }
+      .workspace {
+        display: grid;
+        grid-template-columns: minmax(0, 1.65fr) minmax(280px, 0.95fr);
+        gap: 18px;
+      }
+      .card {
+        border: 1px solid var(--line);
+        border-radius: 24px;
+        background: var(--panel);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.55);
+      }
+      .scene-card {
+        padding: 18px;
+      }
+      .scene-shell {
+        border-radius: 22px;
+        background: linear-gradient(180deg, rgba(236, 243, 240, 0.95) 0%, rgba(245, 249, 246, 0.95) 100%);
+        padding: 18px;
+      }
+      .scene-svg {
+        width: 100%;
+        display: block;
+        border-radius: 18px;
+        background: linear-gradient(180deg, rgba(245, 249, 246, 0.92) 0%, rgba(232, 240, 238, 0.92) 100%);
+      }
+      .metrics {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+        margin-top: 14px;
+      }
+      .metric {
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        padding: 14px 16px;
+        background: var(--panel-strong);
+      }
+      .metric-label {
+        color: var(--muted);
+        font-size: 12px;
+        letter-spacing: 0.08em;
+      }
+      .metric-value {
+        margin-top: 8px;
+        font-size: 18px;
+        font-weight: 700;
+      }
+      .stack {
+        display: grid;
+        gap: 14px;
+      }
+      .info-card {
+        padding: 18px;
+      }
+      .section-title {
+        margin: 0 0 14px;
+        font-size: 14px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      .control {
+        margin-bottom: 14px;
+      }
+      .control:last-child { margin-bottom: 0; }
+      .control-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 8px;
+        color: var(--ink);
+        font-size: 14px;
+      }
+      input[type="range"] { width: 100%; accent-color: var(--accent); }
+      .button-row {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+        margin-top: 18px;
+      }
+      .button-row button {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: var(--panel-strong);
+        padding: 12px 16px;
+        color: var(--ink);
+        font-size: 15px;
+        font-weight: 700;
+      }
+      .notes {
+        display: grid;
+        gap: 12px;
+      }
+      .note {
+        border-radius: 20px;
+        background: rgba(255,255,255,0.82);
+        padding: 14px 16px;
+      }
+      .note strong {
+        display: block;
+        margin-bottom: 8px;
+        font-size: 13px;
+      }
+      .note p,
+      .sequence p {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.75;
+      }
+      .sequence {
+        padding: 18px;
+      }
+      .checklist {
+        display: grid;
+        gap: 10px;
+        margin: 16px 0 0;
+        padding: 0;
+        list-style: none;
+      }
+      .checklist li {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+      }
+      .dot {
+        width: 8px;
+        height: 8px;
+        margin-top: 9px;
+        border-radius: 999px;
+        background: var(--accent);
+        flex: none;
+      }
+      .dot.accent { background: var(--warm); }
+      .footer {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        margin-top: 16px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      @media (max-width: 900px) {
+        .workspace { grid-template-columns: 1fr; }
+        .hero { flex-direction: column; }
+        .metrics { grid-template-columns: 1fr; }
+      }
     </style>
   </head>
   <body>
-    <main>
-      <p class="chip">${version.label}</p>
-      <h1>${document.title}</h1>
-      <p>${document.subtitle}</p>
-      <div class="panel">
-        <strong>教学目标</strong>
-        <p>${document.objective}</p>
+    <div class="page">
+      <div class="hero">
+        <div class="hero-copy">
+          <div class="eyebrow">Version ${escapeHtml(label)}</div>
+          <h1>${escapeHtml(document.title)}</h1>
+          <p class="subtitle">${escapeHtml(document.subtitle)}</p>
+        </div>
+        <div class="badge">${escapeHtml(document.sceneLabel)}</div>
       </div>
-      <div class="panel">
-        <strong>观察重点</strong>
-        <p>${document.focusArea}</p>
+
+      <div class="workspace">
+        <section class="card scene-card">
+          <div class="scene-shell">
+            <svg viewBox="0 0 720 420" class="scene-svg" role="img" aria-label="${escapeHtml(document.artifactName)}">
+              <rect x="60" y="96" width="600" height="248" rx="28" fill="rgba(216, 228, 223, 0.55)" />
+              <line x1="140" y1="210" x2="580" y2="210" stroke="rgba(65,79,82,0.22)" stroke-width="4" stroke-linecap="round" />
+              <circle cx="180" cy="210" r="12" fill="rgba(68,86,88,0.55)" />
+              <circle cx="540" cy="210" r="12" fill="rgba(68,86,88,0.55)" />
+              <text x="171" y="184" fill="rgba(46,61,68,0.78)" font-size="18">A</text>
+              <text x="532" y="184" fill="rgba(46,61,68,0.78)" font-size="18">B</text>
+              <text x="346" y="184" fill="rgba(46,61,68,0.62)" font-size="16">平衡位置 C</text>
+
+              <line id="leftBand" x1="180" y1="210" x2="360" y2="210" stroke="rgba(92,111,113,0.48)" stroke-width="6" stroke-linecap="round" />
+              <line id="rightBand" x1="540" y1="210" x2="360" y2="210" stroke="rgba(92,111,113,0.48)" stroke-width="6" stroke-linecap="round" />
+              <rect id="block" x="334" y="184" width="52" height="52" rx="10" fill="rgba(33,57,66,0.92)" />
+              <line id="forceArrow" x1="360" y1="160" x2="304" y2="160" stroke="rgba(78,129,110,0.96)" stroke-width="6" stroke-linecap="round" />
+              <polygon id="forceTip" points="304,160 314,154 314,166" fill="rgba(78,129,110,0.96)" />
+              <text id="forceLabel" x="212" y="144" fill="rgba(62,107,90,0.95)" font-size="14">合回复力</text>
+              <line id="frictionArrow" x1="360" y1="274" x2="384" y2="274" stroke="rgba(180,120,92,0.85)" stroke-width="5" stroke-linecap="round" />
+              <text id="frictionLabel" x="396" y="296" fill="rgba(140,98,73,0.92)" font-size="14">摩擦</text>
+            </svg>
+
+            <div class="metrics">
+              <div class="metric">
+                <div class="metric-label">位移幅度</div>
+                <div class="metric-value" id="distanceMetric">1.20 m</div>
+              </div>
+              <div class="metric">
+                <div class="metric-label">摩擦系数</div>
+                <div class="metric-value" id="frictionMetric">0.24</div>
+              </div>
+              <div class="metric">
+                <div class="metric-label">保留能量</div>
+                <div class="metric-value" id="energyMetric">83 %</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <div class="stack">
+          <section class="card info-card">
+            <h2 class="section-title">实验设置</h2>
+            <div class="control">
+              <div class="control-head">
+                <span>初始拉开距离 L</span>
+                <strong id="distanceValue">1.20 m</strong>
+              </div>
+              <input id="distanceInput" type="range" min="0.4" max="1.8" step="0.05" value="1.2" />
+            </div>
+            <div class="control">
+              <div class="control-head">
+                <span>动摩擦因数 μ</span>
+                <strong id="frictionValue">0.24</strong>
+              </div>
+              <input id="frictionInput" type="range" min="0" max="0.6" step="0.02" value="0.24" />
+            </div>
+            <div class="control">
+              <div class="control-head">
+                <span>回放速度</span>
+                <strong id="speedValue">1.0x</strong>
+              </div>
+              <input id="speedInput" type="range" min="0.5" max="2.6" step="0.1" value="1" />
+            </div>
+            <div class="button-row">
+              <button id="playButton" type="button">播放</button>
+              <button id="resetButton" type="button">重置</button>
+            </div>
+          </section>
+
+          <section class="card info-card">
+            <h2 class="section-title">教学提示</h2>
+            <div class="notes">
+              <div class="note">
+                <strong>教学目标</strong>
+                <p>${escapeHtml(document.objective)}</p>
+              </div>
+              <div class="note">
+                <strong>观察重点</strong>
+                <p>${escapeHtml(document.focusArea)}</p>
+              </div>
+              <div class="note">
+                <strong>课堂提醒</strong>
+                <p>${escapeHtml(document.callout)}</p>
+              </div>
+            </div>
+          </section>
+        </div>
       </div>
-      <div class="panel">
-        <strong>关键关系</strong>
-        <p>${document.equation}</p>
+
+      <section class="card sequence" style="margin-top: 18px;">
+        <h2 class="section-title">讲评顺序</h2>
+        <p>${escapeHtml(document.motionHint)}</p>
+        <p style="margin-top: 10px;">${escapeHtml(document.equation)}</p>
+        <ul class="checklist">${observationMarkup}${scriptMarkup}</ul>
+      </section>
+
+      <div class="footer">
+        <span>${escapeHtml(document.artifactName)}</span>
+        <span>${escapeHtml(document.insight)}</span>
       </div>
-    </main>
+    </div>
+
+    <script>
+      const state = { distance: 1.2, friction: 0.24, speed: 1, progress: 0.18, playing: false };
+      const leftBand = document.getElementById("leftBand");
+      const rightBand = document.getElementById("rightBand");
+      const block = document.getElementById("block");
+      const forceArrow = document.getElementById("forceArrow");
+      const forceTip = document.getElementById("forceTip");
+      const forceLabel = document.getElementById("forceLabel");
+      const frictionArrow = document.getElementById("frictionArrow");
+      const frictionLabel = document.getElementById("frictionLabel");
+      const distanceInput = document.getElementById("distanceInput");
+      const frictionInput = document.getElementById("frictionInput");
+      const speedInput = document.getElementById("speedInput");
+      const distanceValue = document.getElementById("distanceValue");
+      const frictionValue = document.getElementById("frictionValue");
+      const speedValue = document.getElementById("speedValue");
+      const distanceMetric = document.getElementById("distanceMetric");
+      const frictionMetric = document.getElementById("frictionMetric");
+      const energyMetric = document.getElementById("energyMetric");
+      const playButton = document.getElementById("playButton");
+      const resetButton = document.getElementById("resetButton");
+
+      function render() {
+        const damping = Math.exp(-state.progress * (0.8 + state.friction));
+        const oscillation = Math.cos(state.progress * Math.PI * 2.5 * state.speed);
+        const offset = state.distance * 92 * damping * oscillation;
+        const restoring = Math.abs(offset) * 0.18 + 24;
+        const energy = Math.max(0.12, damping);
+        const center = 360 + offset;
+        const frictionOffset = 52 * state.friction;
+
+        leftBand.setAttribute("x2", String(center));
+        rightBand.setAttribute("x2", String(center));
+        block.setAttribute("x", String(334 + offset));
+        forceArrow.setAttribute("x1", String(center));
+        forceArrow.setAttribute("x2", String(center - restoring));
+        forceTip.setAttribute("points", center - restoring + ",160 " + (center - restoring + 10) + ",154 " + (center - restoring + 10) + ",166");
+        forceLabel.setAttribute("x", String(center - restoring - 84));
+        frictionArrow.setAttribute("x1", String(center));
+        frictionArrow.setAttribute("x2", String(center + frictionOffset));
+        frictionLabel.setAttribute("x", String(center + frictionOffset + 10));
+
+        distanceValue.textContent = state.distance.toFixed(2) + " m";
+        frictionValue.textContent = state.friction.toFixed(2);
+        speedValue.textContent = state.speed.toFixed(1) + "x";
+        distanceMetric.textContent = state.distance.toFixed(2) + " m";
+        frictionMetric.textContent = state.friction.toFixed(2);
+        energyMetric.textContent = Math.round(energy * 100) + " %";
+        playButton.textContent = state.playing ? "暂停" : "播放";
+      }
+
+      distanceInput.addEventListener("input", (event) => {
+        state.distance = Number(event.target.value);
+        render();
+      });
+      frictionInput.addEventListener("input", (event) => {
+        state.friction = Number(event.target.value);
+        render();
+      });
+      speedInput.addEventListener("input", (event) => {
+        state.speed = Number(event.target.value);
+        render();
+      });
+      playButton.addEventListener("click", () => {
+        state.playing = !state.playing;
+        render();
+      });
+      resetButton.addEventListener("click", () => {
+        state.playing = false;
+        state.progress = 0.18;
+        render();
+      });
+      setInterval(() => {
+        if (!state.playing) return;
+        state.progress = state.progress + 0.012 * state.speed;
+        if (state.progress > 1) state.progress = 0;
+        render();
+      }, 40);
+      render();
+    </script>
   </body>
 </html>`;
 }

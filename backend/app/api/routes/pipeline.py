@@ -7,6 +7,7 @@ from fastapi.responses import FileResponse
 from app.domain.problem import ProblemInput
 from app.harness.orchestrator import (
     create_problem_to_simulation_run,
+    delete_run,
     export_html_path,
     export_run_html,
     list_recent_runs,
@@ -55,6 +56,14 @@ def get_recent_runs(request: Request) -> dict:
 def get_run_status(run_id: str, request: Request) -> dict:
     try:
         return read_run_status(run_id, runs_root=_runs_root(request))
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Run not found") from exc
+
+
+@router.delete("/problem-to-simulation/runs/{run_id}")
+def remove_run(run_id: str, request: Request) -> dict:
+    try:
+        return delete_run(run_id, runs_root=_runs_root(request))
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Run not found") from exc
 

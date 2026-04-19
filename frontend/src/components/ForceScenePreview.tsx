@@ -19,6 +19,10 @@ export function ForceScenePreview({ scene }: ForceScenePreviewProps) {
   const parameters = (scene.parameters as Record<string, unknown> | undefined) ?? {};
   const stageOptions = (parameters.stage_options as StageOption[] | undefined) ?? [];
   const defaultStage = typeof parameters.active_stage_id === "string" ? parameters.active_stage_id : "";
+  const researchObject =
+    typeof parameters.research_object === "string" ? parameters.research_object : "研究对象";
+  const scenario =
+    typeof parameters.scenario === "string" ? parameters.scenario : "按当前题干生成的受力分析情境";
   const [activeStageId, setActiveStageId] = useState(defaultStage);
 
   useEffect(() => {
@@ -39,7 +43,7 @@ export function ForceScenePreview({ scene }: ForceScenePreviewProps) {
   return (
     <section className="panel">
       <h2>Force Scene Preview</h2>
-      <p className="muted">第一版 scene 支持按阶段切换受力箭头，用来验证 scene 编译是否合理。</p>
+      <p className="muted">{scenario}</p>
 
       {stageOptions.length > 0 ? (
         <label className="stage-selector">
@@ -56,8 +60,8 @@ export function ForceScenePreview({ scene }: ForceScenePreviewProps) {
 
       <div className="force-preview">
         <div className="block-card">
-          <strong>{currentStageLabel}</strong>
-          <span>研究对象受力图</span>
+          <strong>{researchObject}</strong>
+          <span>{currentStageLabel}</span>
         </div>
         <div className="force-meta">
           {currentForces.map((force, index) => (
