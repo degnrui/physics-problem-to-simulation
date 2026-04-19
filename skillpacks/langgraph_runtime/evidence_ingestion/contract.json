@@ -1,0 +1,8 @@
+{
+  "required_fields": [
+    "completion_status",
+    "evidence_items",
+    "source_inventory",
+    "missing_evidence"
+  ]
+}

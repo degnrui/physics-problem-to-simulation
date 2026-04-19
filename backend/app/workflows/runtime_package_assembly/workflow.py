@@ -2,22 +2,22 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-from ..common import issue
+from ..common import contract_value, issue, required_fields
 
 
 def build_artifact(inputs: Dict[str, Dict[str, Any]], _: Dict[str, Any], __: Dict[str, Any]) -> Dict[str, Any]:
     design = inputs["simulation_design"]
     return {
-        "generator_target": "single_file_html_runtime",
-        "required_features": ["canvas", "play", "pause", "reset", "measurement-panel"],
-        "forbidden_outputs": ["Simulation Contract", "Simulation Payload", "payload dump"],
+        "generator_target": contract_value(__, "generator_target", "single_file_html_runtime"),
+        "required_features": contract_value(__, "required_features", ["canvas", "play", "pause", "reset", "measurement-panel"]),
+        "forbidden_outputs": contract_value(__, "forbidden_outputs", ["Simulation Contract", "Simulation Payload", "payload dump"]),
         "design_spec": design,
     }
 
 
 def validate_artifact(candidate: Dict[str, Any], _: Dict[str, Dict[str, Any]], __: Dict[str, Any], ___: Dict[str, Any]) -> List[Dict[str, Any]]:
     issues: List[Dict[str, Any]] = []
-    for key in ["generator_target", "required_features", "forbidden_outputs", "design_spec"]:
+    for key in required_fields(___, ["generator_target", "required_features", "forbidden_outputs", "design_spec"]):
         if candidate.get(key) in (None, "", [], {}):
             issues.append(issue("MISSING_FIELD", f"runtime_package_assembly missing `{key}`.", key))
     return issues

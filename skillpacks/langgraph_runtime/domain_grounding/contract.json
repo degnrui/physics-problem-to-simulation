@@ -1,0 +1,9 @@
+{
+  "required_fields": [
+    "domain_type",
+    "symbol_table",
+    "canonical_equations",
+    "assumptions",
+    "trustworthy_evidence"
+  ]
+}

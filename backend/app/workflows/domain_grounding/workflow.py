@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-from ..common import detect_domain_type, issue, split_sentences
+from ..common import detect_domain_type, issue, required_fields, split_sentences
 
 
 def _domain_template(domain_type: str) -> Dict[str, Any]:
@@ -50,7 +50,7 @@ def build_artifact(inputs: Dict[str, Dict[str, Any]], state: Dict[str, Any], __:
 
 def validate_artifact(candidate: Dict[str, Any], _: Dict[str, Dict[str, Any]], __: Dict[str, Any], ___: Dict[str, Any]) -> List[Dict[str, Any]]:
     issues: List[Dict[str, Any]] = []
-    for key in ["domain_type", "symbol_table", "canonical_equations", "assumptions", "trustworthy_evidence"]:
+    for key in required_fields(___, ["domain_type", "symbol_table", "canonical_equations", "assumptions", "trustworthy_evidence"]):
         if candidate.get(key) in (None, "", [], {}):
             issues.append(issue("MISSING_FIELD", f"Missing grounding field `{key}`.", key))
     return issues

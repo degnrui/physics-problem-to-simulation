@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-from ..common import issue
+from ..common import issue, required_fields
 
 
 def build_artifact(inputs: Dict[str, Dict[str, Any]], _: Dict[str, Any], __: Dict[str, Any]) -> Dict[str, Any]:
@@ -20,7 +20,7 @@ def build_artifact(inputs: Dict[str, Dict[str, Any]], _: Dict[str, Any], __: Dic
 
 def validate_artifact(candidate: Dict[str, Any], inputs: Dict[str, Dict[str, Any]], _: Dict[str, Any], __: Dict[str, Any]) -> List[Dict[str, Any]]:
     issues: List[Dict[str, Any]] = []
-    for key in ["learning_goals", "observation_priorities", "misconception_plan", "interaction_priorities", "audience_mode"]:
+    for key in required_fields(__, ["learning_goals", "observation_priorities", "misconception_plan", "interaction_priorities", "audience_mode"]):
         if candidate.get(key) in (None, "", [], {}):
             issues.append(issue("MISSING_FIELD", f"Missing instructional field `{key}`.", key))
     approved_equations = " ".join(inputs["domain_grounding"].get("canonical_equations", []))

@@ -5,7 +5,7 @@ from typing import Any, Dict, List
 from app.orchestrator.review import run_stage_review
 from app.orchestrator.state import append_trace, set_stage_status
 
-from ..common import issue
+from ..common import contract_value, issue, required_fields
 
 
 def _scene_build(inputs: Dict[str, Dict[str, Any]], _: Dict[str, Any], __: Dict[str, Any]) -> Dict[str, Any]:
@@ -17,13 +17,13 @@ def _scene_build(inputs: Dict[str, Dict[str, Any]], _: Dict[str, Any], __: Dict[
             {"id": "reference-axis", "kind": "axis"},
         ],
         "spatial_layout": {"camera": "front", "anchor": "center"},
-        "state_anchors": ["position", "velocity", "energy"],
+        "state_anchors": contract_value(__, "required_state_anchors", ["position", "velocity", "energy"]),
     }
 
 
 def _scene_validate(candidate: Dict[str, Any], _: Dict[str, Dict[str, Any]], __: Dict[str, Any], ___: Dict[str, Any]) -> List[Dict[str, Any]]:
     issues: List[Dict[str, Any]] = []
-    for key in ["template_family", "entities", "spatial_layout", "state_anchors"]:
+    for key in required_fields(___, ["template_family", "entities", "spatial_layout", "state_anchors"]):
         if candidate.get(key) in (None, "", [], {}):
             issues.append(issue("MISSING_FIELD", f"scene_design missing `{key}`.", key))
     if not any(entity.get("id") == "primary-body" for entity in candidate.get("entities", [])):
@@ -48,14 +48,20 @@ def _scene_approve(candidate: Dict[str, Any], _: Dict[str, Dict[str, Any]], __: 
 
 
 def _control_build(inputs: Dict[str, Dict[str, Any]], _: Dict[str, Any], __: Dict[str, Any]) -> Dict[str, Any]:
+    required_controls = contract_value(__, "required_controls", ["play", "pause", "reset"])
+    parameter_control = contract_value(
+        __,
+        "parameter_control",
+        {"id": "mass", "label": "Mass", "input_type": "range", "default": "1.0", "state_binding": "mass", "min": "0.5", "max": "3.0"},
+    )
+    playback = {
+        "play": {"id": "play", "label": "Play", "input_type": "button", "default": "play", "state_binding": "isPlaying"},
+        "pause": {"id": "pause", "label": "Pause", "input_type": "button", "default": "pause", "state_binding": "isPlaying"},
+        "reset": {"id": "reset", "label": "Reset", "input_type": "button", "default": "reset", "state_binding": "time"},
+    }
     return {
-        "controls": [
-            {"id": "play", "label": "Play", "input_type": "button", "default": "play", "state_binding": "isPlaying"},
-            {"id": "pause", "label": "Pause", "input_type": "button", "default": "pause", "state_binding": "isPlaying"},
-            {"id": "reset", "label": "Reset", "input_type": "button", "default": "reset", "state_binding": "time"},
-            {"id": "mass", "label": "Mass", "input_type": "range", "default": "1.0", "state_binding": "mass", "min": "0.5", "max": "3.0"},
-        ],
-        "runtime_state": ["isPlaying", "time", "mass"],
+        "controls": [playback[control] for control in required_controls] + [parameter_control],
+        "runtime_state": ["isPlaying", "time", parameter_control["state_binding"]],
     }
 
 
@@ -63,7 +69,7 @@ def _control_validate(candidate: Dict[str, Any], _: Dict[str, Dict[str, Any]], _
     issues: List[Dict[str, Any]] = []
     controls = candidate.get("controls") or []
     ids = {control.get("id") for control in controls}
-    for required in {"play", "pause", "reset"}:
+    for required in contract_value(___, "required_controls", ["play", "pause", "reset"]):
         if required not in ids:
             issues.append(issue("MISSING_CONTROL", f"control_design requires `{required}`.", "controls"))
     if not any(control.get("id") not in {"play", "pause", "reset"} for control in controls):
@@ -97,6 +103,10 @@ def _chart_build(inputs: Dict[str, Dict[str, Any]], _: Dict[str, Any], __: Dict[
 
 
 def _chart_validate(candidate: Dict[str, Any], _: Dict[str, Dict[str, Any]], __: Dict[str, Any], ___: Dict[str, Any]) -> List[Dict[str, Any]]:
+    required = required_fields(___, ["charts", "measurement_panels"])
+    for key in required:
+        if key in {"charts", "measurement_panels"} and candidate.get(key) is None:
+            return [issue("MISSING_FIELD", f"chart_measurement_design missing `{key}`.", key)]
     if not candidate.get("charts") and not candidate.get("measurement_panels"):
         return [issue("MISSING_EVIDENCE_UI", "chart_measurement_design requires charts or measurement panels.", "charts")]
     return []
@@ -128,7 +138,7 @@ def _view_build(inputs: Dict[str, Dict[str, Any]], _: Dict[str, Any], __: Dict[s
 
 def _view_validate(candidate: Dict[str, Any], _: Dict[str, Dict[str, Any]], __: Dict[str, Any], ___: Dict[str, Any]) -> List[Dict[str, Any]]:
     issues: List[Dict[str, Any]] = []
-    for key in ["teacher", "student"]:
+    for key in required_fields(___, ["teacher", "student"]):
         if candidate.get(key) in (None, {}):
             issues.append(issue("MISSING_PRESET", f"pedagogical_view_design missing `{key}` preset.", key))
     return issues
@@ -170,7 +180,7 @@ def _merge_build(inputs: Dict[str, Dict[str, Any]], _: Dict[str, Any], __: Dict[
 
 def _merge_validate(candidate: Dict[str, Any], _: Dict[str, Dict[str, Any]], __: Dict[str, Any], ___: Dict[str, Any]) -> List[Dict[str, Any]]:
     issues: List[Dict[str, Any]] = []
-    if not candidate.get("controls"):
+    if "controls" in required_fields(___, ["controls", "charts", "measurement_panels", "pedagogical_views", "scene"]) and not candidate.get("controls"):
         issues.append(issue("MISSING_CONTROLS", "design_merge requires controls.", "controls"))
     if not candidate.get("charts") and not candidate.get("measurement_panels"):
         issues.append(issue("MISSING_EVIDENCE_UI", "design_merge requires charts or measurement panels.", "charts"))
@@ -204,6 +214,16 @@ SUBNODE_DEFINITIONS = {
 
 
 def run_simulation_design_subgraph(state: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+    parent_skillpack = context["skillpack_store"].load("simulation_design")
+    append_trace(
+        state,
+        stage="simulation_design",
+        event="skillpack_loaded",
+        details={
+            "path": parent_skillpack["relative_dir"],
+            "skill_path": parent_skillpack["skill_relative_path"],
+        },
+    )
     approved_inputs = {
         "request_analysis": state["approved_artifacts"]["request_analysis"],
         "domain_grounding": state["approved_artifacts"]["domain_grounding"],

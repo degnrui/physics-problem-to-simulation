@@ -1,0 +1,9 @@
+{
+  "required_fields": [
+    "request_mode",
+    "input_profile",
+    "information_density",
+    "has_existing_simulation",
+    "recommended_plan"
+  ]
+}

@@ -35,6 +35,17 @@ Every stage uses the same outer loop:
 
 Only `runtime_validation` may route back to a different stage, and it routes only to `code_generation`.
 
+## Skillpacks
+
+The live stage guidance is stored under `skillpacks/langgraph_runtime/`.
+
+- every main stage and every `simulation_design` child node has its own skillpack directory
+- each directory contains `SKILL.md`, `contract.json`, `validator.md`, and `repair.md`
+- `backend/app/skillpacks.py` loads the active stage skillpack at runtime
+- main stages prefer the text guidance under `skillpacks/optimized_skills/*.md` when available
+- the coordinator records `skillpack_loaded` in `execution_trace` so runs show which skillpack guided each stage
+- validators and package assembly read `contract.json` values directly, so skillpacks affect execution rather than serving as dead documentation
+
 ## `simulation_design` Subgraph
 
 `simulation_design` is a subgraph with explicit child nodes:

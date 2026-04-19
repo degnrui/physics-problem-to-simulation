@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 from app.domain.problem import ProblemInput
+from app.skillpacks import SkillpackStore
 from app.runtime import RuntimeArtifactStore, RuntimeGeneratorClient, export_delivery_runtime
 
 from .checkpoints import CheckpointStore
@@ -102,6 +103,7 @@ def run_problem_to_simulation_harness_for_run(problem: ProblemInput, *, run_id: 
         "artifact_store": artifact_store,
         "checkpoints": checkpoints,
         "generator_client": RuntimeGeneratorClient(),
+        "skillpack_store": SkillpackStore(),
         "started_at": started_at,
     }
 

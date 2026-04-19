@@ -1,0 +1,7 @@
+{
+  "required_fields": [
+    "files",
+    "generator_metadata",
+    "primary_file"
+  ]
+}

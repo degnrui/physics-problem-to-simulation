@@ -20,6 +20,9 @@ Key rules:
 - `backend/app/orchestrator/`: coordinator graph, state, checkpoints, review loop
 - `backend/app/workflows/`: stage packages and the `simulation_design` subgraph
 - `backend/app/runtime/`: generator client, artifact store, exporter
+- `backend/app/skillpacks.py`: runtime loader for stage skillpacks
+- `skillpacks/langgraph_runtime/`: stage-by-stage `SKILL.md`, `contract.json`, `validator.md`, `repair.md`
+- `skillpacks/optimized_skills/`: optimized main-stage guidance text consumed first for top-level stages
 - `frontend/src/`: Studio UI that consumes only the new run/result contracts
 - `shared/contracts/`: typed shared contract definitions
 
@@ -41,7 +44,7 @@ Key rules:
 Backend:
 
 ```bash
-uvicorn backend.app.main:app --reload
+PYTHONPATH=backend python3 -m uvicorn app.main:app --reload
 ```
 
 Frontend:

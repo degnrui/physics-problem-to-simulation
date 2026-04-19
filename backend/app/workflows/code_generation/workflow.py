@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-from ..common import issue
+from ..common import issue, required_fields
 
 
 def build_artifact(inputs: Dict[str, Dict[str, Any]], _: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
@@ -12,12 +12,9 @@ def build_artifact(inputs: Dict[str, Dict[str, Any]], _: Dict[str, Any], context
 
 def validate_artifact(candidate: Dict[str, Any], _: Dict[str, Dict[str, Any]], __: Dict[str, Any], ___: Dict[str, Any]) -> List[Dict[str, Any]]:
     issues: List[Dict[str, Any]] = []
-    if not candidate.get("files"):
-        issues.append(issue("MISSING_FILES", "code_generation requires generated files.", "files"))
-    if not candidate.get("generator_metadata"):
-        issues.append(issue("MISSING_METADATA", "code_generation requires generator metadata.", "generator_metadata"))
-    if not candidate.get("primary_file"):
-        issues.append(issue("MISSING_PRIMARY_FILE", "code_generation requires a primary_file.", "primary_file"))
+    for key in required_fields(___, ["files", "generator_metadata", "primary_file"]):
+        if not candidate.get(key):
+            issues.append(issue("MISSING_FIELD", f"code_generation requires `{key}`.", key))
     return issues
 
 

@@ -1,0 +1,24 @@
+{
+  "required_controls": [
+    "play",
+    "pause",
+    "reset"
+  ],
+  "evidence_markers": [
+    "measurement-panel",
+    "chart-card",
+    "chart"
+  ],
+  "forbidden_markers": [
+    "Simulation Contract",
+    "Simulation Payload",
+    "<pre>",
+    "payload dump",
+    "report summary"
+  ],
+  "state_control_markers": [
+    "type=\"range\"",
+    "type='range'",
+    "select"
+  ]
+}

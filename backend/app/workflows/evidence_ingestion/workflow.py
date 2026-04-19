@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-from ..common import issue, split_sentences
+from ..common import issue, required_fields, split_sentences
 
 
 def build_artifact(_: Dict[str, Dict[str, Any]], state: Dict[str, Any], __: Dict[str, Any]) -> Dict[str, Any]:
@@ -17,6 +17,9 @@ def build_artifact(_: Dict[str, Dict[str, Any]], state: Dict[str, Any], __: Dict
 
 def validate_artifact(candidate: Dict[str, Any], _: Dict[str, Dict[str, Any]], __: Dict[str, Any], ___: Dict[str, Any]) -> List[Dict[str, Any]]:
     issues: List[Dict[str, Any]] = []
+    for key in required_fields(___, ["completion_status", "evidence_items", "source_inventory", "missing_evidence"]):
+        if key != "evidence_items" and candidate.get(key) in (None, "", [], {}):
+            issues.append(issue("MISSING_FIELD", f"Missing evidence field `{key}`.", key))
     if candidate.get("completion_status") not in {"completed", "skipped"}:
         issues.append(issue("INVALID_STATUS", "completion_status must be completed or skipped.", "completion_status"))
     if candidate.get("completion_status") == "completed" and not candidate.get("evidence_items"):

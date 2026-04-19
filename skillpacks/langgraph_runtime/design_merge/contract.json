@@ -1,0 +1,9 @@
+{
+  "required_fields": [
+    "controls",
+    "charts",
+    "measurement_panels",
+    "pedagogical_views",
+    "scene"
+  ]
+}

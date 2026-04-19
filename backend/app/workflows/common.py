@@ -29,3 +29,13 @@ def detect_domain_type(text: str) -> str:
         return "restoring_force"
     return "force_analysis"
 
+
+def contract_value(context: Dict[str, Any], key: str, default: Any) -> Any:
+    skillpack = context.get("stage_skillpack") or {}
+    contract = skillpack.get("contract") or {}
+    return contract.get(key, default)
+
+
+def required_fields(context: Dict[str, Any], default: List[str]) -> List[str]:
+    values = contract_value(context, "required_fields", default)
+    return values if isinstance(values, list) and values else default

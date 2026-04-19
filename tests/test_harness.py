@@ -16,6 +16,7 @@ from app.main import app
 from app.orchestrator.graph import create_coordinator_graph
 from app.orchestrator.runner import plan_problem_to_simulation, run_problem_to_simulation_harness
 from app.runtime.generator_client import RuntimeGeneratorClient
+from app.skillpacks import SkillpackStore
 
 
 NEW_SIMULATION_PROBLEM = (
@@ -28,8 +29,43 @@ REVISION_PROBLEM = (
     "新增速度-时间图和测量面板，并让教师模式默认展示证据面板。"
 )
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
 
 class CoordinatorGraphTests(unittest.TestCase):
+    def test_new_skillpack_layout_exists_and_legacy_layout_is_removed(self) -> None:
+        skillpacks_root = REPO_ROOT / "skillpacks"
+        self.assertTrue((skillpacks_root / "langgraph_runtime").exists())
+        self.assertTrue((skillpacks_root / "optimized_skills" / "REQUEST_ANALYSIS.md").exists())
+        self.assertFalse((skillpacks_root / "physics_sim_agent_v2_package").exists())
+        self.assertFalse((REPO_ROOT / "shared" / "contracts" / "problem-to-simulation.json").exists())
+
+        for stage in [
+            "request_analysis",
+            "evidence_ingestion",
+            "domain_grounding",
+            "instructional_modeling",
+            "simulation_design",
+            "scene_design",
+            "control_design",
+            "chart_measurement_design",
+            "pedagogical_view_design",
+            "design_merge",
+            "runtime_package_assembly",
+            "code_generation",
+            "runtime_validation",
+        ]:
+            stage_dir = skillpacks_root / "langgraph_runtime" / stage
+            self.assertTrue((stage_dir / "SKILL.md").exists(), stage)
+            self.assertTrue((stage_dir / "contract.json").exists(), stage)
+            self.assertTrue((stage_dir / "validator.md").exists(), stage)
+            self.assertTrue((stage_dir / "repair.md").exists(), stage)
+
+    def test_main_stage_prefers_remote_optimized_skill_text(self) -> None:
+        payload = SkillpackStore().load("request_analysis")
+        self.assertEqual(payload["skill_relative_path"], "skillpacks/optimized_skills/REQUEST_ANALYSIS.md")
+        self.assertIn("Classify incoming physics problem requests", payload["skill"])
+
     def test_plan_for_new_simulation_uses_new_stage_names(self) -> None:
         result = plan_problem_to_simulation(ProblemInput(text=NEW_SIMULATION_PROBLEM))
 
@@ -108,6 +144,22 @@ class CoordinatorGraphTests(unittest.TestCase):
                 "design_merge",
             ],
         )
+
+    def test_run_records_loaded_skillpacks_for_main_and_subgraph_stages(self) -> None:
+        result = run_problem_to_simulation_harness(
+            ProblemInput(text=NEW_SIMULATION_PROBLEM),
+            runs_root=Path(tempfile.mkdtemp()),
+        )
+
+        loaded = [
+            event["stage"]
+            for event in result["execution_trace"]
+            if event["event"] == "skillpack_loaded"
+        ]
+        self.assertIn("request_analysis", loaded)
+        self.assertIn("domain_grounding", loaded)
+        self.assertIn("scene_design", loaded)
+        self.assertIn("runtime_validation", loaded)
 
 
 class CoordinatorApiTests(unittest.TestCase):

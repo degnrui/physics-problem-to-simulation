@@ -1,0 +1,13 @@
+{
+  "required_fields": [
+    "template_family",
+    "entities",
+    "spatial_layout",
+    "state_anchors"
+  ],
+  "required_state_anchors": [
+    "position",
+    "velocity",
+    "energy"
+  ]
+}

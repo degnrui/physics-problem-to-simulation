@@ -4,7 +4,7 @@ from typing import Any, Dict, List
 
 from app.orchestrator.planner import analyze_request_text
 
-from ..common import issue
+from ..common import issue, required_fields
 
 KNOWN_STAGES = {
     "request_analysis",
@@ -29,13 +29,16 @@ def build_artifact(_: Dict[str, Dict[str, Any]], state: Dict[str, Any], __: Dict
 
 def validate_artifact(candidate: Dict[str, Any], _: Dict[str, Dict[str, Any]], __: Dict[str, Any], ___: Dict[str, Any]) -> List[Dict[str, Any]]:
     issues: List[Dict[str, Any]] = []
-    for key in [
-        "request_mode",
-        "input_profile",
-        "information_density",
-        "has_existing_simulation",
-        "recommended_plan",
-    ]:
+    for key in required_fields(
+        ___,
+        [
+            "request_mode",
+            "input_profile",
+            "information_density",
+            "has_existing_simulation",
+            "recommended_plan",
+        ],
+    ):
         if candidate.get(key) in (None, "", []):
             issues.append(issue("MISSING_FIELD", f"Missing request analysis field `{key}`.", key))
     plan = candidate.get("recommended_plan") or []

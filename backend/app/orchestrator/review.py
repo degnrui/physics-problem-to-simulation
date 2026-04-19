@@ -39,8 +39,19 @@ def run_stage_review(
     max_attempts: int = 2,
     retry_stage: str | None = None,
 ) -> Dict[str, Any]:
+    stage_skillpack = context["skillpack_store"].load(stage)
+    stage_context = {**context, "stage_skillpack": stage_skillpack}
+    append_trace(
+        state,
+        stage=stage,
+        event="skillpack_loaded",
+        details={
+            "path": stage_skillpack["relative_dir"],
+            "skill_path": stage_skillpack["skill_relative_path"],
+        },
+    )
     attempts = 0
-    candidate = worker(inputs, state, context)
+    candidate = worker(inputs, state, stage_context)
     append_trace(state, stage=stage, event="generated", details={"attempt": 1})
 
     while attempts < max_attempts:
@@ -49,9 +60,9 @@ def run_stage_review(
         state["artifacts"][stage] = candidate
         context["artifact_store"].write_json_artifact(stage, candidate)
 
-        issues = validator(candidate, inputs, state, context)
+        issues = validator(candidate, inputs, state, stage_context)
         if not issues:
-            issues = approver(candidate, inputs, state, context)
+            issues = approver(candidate, inputs, state, stage_context)
 
         if not issues:
             state["approved_artifacts"][stage] = candidate
@@ -81,7 +92,7 @@ def run_stage_review(
 
         set_stage_status(state, stage=stage, status="needs_repair", attempts=attempts, issues=issues)
         append_trace(state, stage=stage, event="repair_requested", details={"attempt": attempts, "issues": issues})
-        candidate = repairer(candidate, issues, inputs, state, context)
+        candidate = repairer(candidate, issues, inputs, state, stage_context)
         append_trace(state, stage=stage, event="repair_applied", details={"attempt": attempts + 1})
 
     raise StageFailure(stage, [{"code": "UNREACHABLE", "message": "review loop exhausted"}])
