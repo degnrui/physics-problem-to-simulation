@@ -8,49 +8,40 @@ export function resolveApiBase() {
 
 const API_BASE = resolveApiBase();
 
-export interface RunStep {
-  id: string;
-  label: string;
+export interface StageStatus {
+  name: string;
   status: string;
-  artifacts_written: string[];
-  error: string;
-  execution_mode?: string;
-  model_name?: string;
-  validation_passed?: boolean;
+  attempts: number;
+  score: number;
+  issues: Array<Record<string, unknown>>;
 }
 
 export interface RunStatusResponse {
   run_id: string;
   status: string;
-  current_stage: string;
-  current_step_index: number;
-  total_steps: number;
-  percent: number;
+  active_stage: string;
+  workflow_plan: string[];
+  stage_status: Record<string, StageStatus>;
   started_at: string | null;
   updated_at: string | null;
   finished_at: string | null;
-  steps: RunStep[];
 }
 
 export interface RunResultResponse {
   run_id: string;
-  task_plan: Record<string, unknown>;
-  stage_graph: string[];
+  run_state: {
+    request_mode: string;
+    request_profile: Record<string, unknown>;
+    workflow_plan: string[];
+    active_stage: string;
+    stage_status: Record<string, StageStatus>;
+  };
   artifacts: Record<string, Record<string, unknown>>;
-  stage_validations: Record<string, Record<string, unknown>>;
-  generation_trace: Array<Record<string, unknown>>;
-  run_profiling: Record<string, unknown>;
-  evidence_completion: Record<string, unknown> | null;
-  knowledge_grounding: Record<string, unknown>;
-  structured_task_model: Record<string, unknown>;
-  instructional_design_brief: Record<string, unknown>;
-  physics_model: Record<string, unknown>;
-  representation_interaction_design: Record<string, unknown>;
-  experience_mode_adaptation: Record<string, unknown>;
-  simulation_spec_generation: Record<string, unknown>;
-  final_validation: Record<string, unknown>;
-  compile_delivery: Record<string, unknown> | null;
-  task_log: Array<Record<string, unknown>>;
+  approved_artifacts: Record<string, Record<string, unknown>>;
+  runtime_package: Record<string, unknown> | null;
+  generated_files: Record<string, string>;
+  delivery_runtime: { primary_file: string; html: string } | null;
+  execution_trace: Array<Record<string, unknown>>;
 }
 
 export interface RunCreateResponse {
@@ -66,9 +57,7 @@ export interface RunListItem {
   status: string;
   updated_at: string | null;
   input_profile: string;
-  experience_mode: string;
-  score: number;
-  export_ready: boolean;
+  request_mode: string;
 }
 
 export interface RunListResponse {

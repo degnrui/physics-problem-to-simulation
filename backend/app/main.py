@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes.health import router as health_router
 from app.api.routes.pipeline import router as pipeline_router
 from app.config import settings
-from app.harness.orchestrator import _default_runs_root
+from app.orchestrator.runner import _default_runs_root
 
 app = FastAPI(title=settings.app_name, version=settings.app_version)
 app.state.runs_root = _default_runs_root()
