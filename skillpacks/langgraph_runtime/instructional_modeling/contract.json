@@ -1,0 +1,9 @@
+{
+  "required_fields": [
+    "learning_goals",
+    "observation_priorities",
+    "misconception_plan",
+    "interaction_priorities",
+    "audience_mode"
+  ]
+}

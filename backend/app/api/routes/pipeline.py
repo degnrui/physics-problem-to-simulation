@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse
 
 from app.domain.problem import ProblemInput
-from app.harness.orchestrator import (
+from app.orchestrator.runner import (
     create_problem_to_simulation_run,
     delete_run,
     export_html_path,
@@ -88,7 +88,7 @@ def create_run_export(run_id: str, request: Request) -> dict:
     if status["status"] != "completed":
         raise HTTPException(status_code=409, detail="Run is not completed")
     result = read_run_result(run_id, runs_root=_runs_root(request))
-    if not result["final_validation"].get("export_ready"):
+    if not result.get("delivery_runtime"):
         raise HTTPException(status_code=409, detail="Run is not exportable")
     return export_run_html(run_id, runs_root=_runs_root(request))
 

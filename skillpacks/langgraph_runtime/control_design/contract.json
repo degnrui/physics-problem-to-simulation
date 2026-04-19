@@ -1,0 +1,16 @@
+{
+  "required_controls": [
+    "play",
+    "pause",
+    "reset"
+  ],
+  "parameter_control": {
+    "id": "mass",
+    "label": "Mass",
+    "input_type": "range",
+    "default": "1.0",
+    "state_binding": "mass",
+    "min": "0.5",
+    "max": "3.0"
+  }
+}

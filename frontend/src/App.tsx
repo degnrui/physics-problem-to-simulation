@@ -1,38 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
-import { AppShell } from "./components/studio/AppShell";
-import { CollapsibleConversationSidebar } from "./components/studio/CollapsibleConversationSidebar";
-import { ConversationContentPanel } from "./components/studio/ConversationContentPanel";
-import { FullscreenRuntimeModal } from "./components/studio/FullscreenRuntimeModal";
-import { GenerationStagePlayer } from "./components/studio/GenerationStagePlayer";
-import { HomeInputStage } from "./components/studio/HomeInputStage";
-import { HtmlRuntimeFrame } from "./components/studio/HtmlRuntimeFrame";
-import { PreviewPanel } from "./components/studio/PreviewPanel";
-import { UtilityRail } from "./components/studio/UtilityRail";
+import { useEffect, useState } from "react";
 import {
-  applyInlineEdit,
-  applyPromptToDocument,
-  buildArtifact,
-  buildConversationMessages,
-  buildConversationSummary,
-  buildHtmlSource,
-  buildRuntimeDocument,
-  createArtifactVersion,
-  createEmptyConversationSession,
-  createFollowUpMessages,
-  createInlineEditMessages,
-  ensureConversationSession,
-  getStageMode,
-  getStagePresentation,
-  loadHiddenRunIds,
-  loadStoredSessions,
-  saveHiddenRunIds,
-  saveStoredSessions,
-} from "./lib/studio";
-import {
-  createHtmlExport,
   createRun,
-  deleteRun,
-  exportDownloadUrl,
   getRunResult,
   getRunStatus,
   listRuns,
@@ -40,11 +8,6 @@ import {
   type RunResultResponse,
   type RunStatusResponse,
 } from "./lib/api";
-import type {
-  ConversationSessionData,
-  ConversationSummary,
-  InlineEditTarget,
-} from "./types/studio";
 
 const SAMPLE_PROBLEM =
   "如图所示，两根相同的橡皮绳连接物块，沿 AB 中垂线拉至 O 点后释放。请生成一个适合课堂讲评的 simulation，突出回复力方向、摩擦耗能和教学观察顺序。";
@@ -64,21 +27,37 @@ function navigateTo(path: string) {
   window.dispatchEvent(new PopStateEvent("popstate"));
 }
 
+function summarizeArtifact(value: unknown): string {
+  if (value === null || value === undefined) {
+    return "empty";
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.slice(0, 3).map((item) => summarizeArtifact(item)).join(", ");
+  }
+  if (typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    if (typeof record.title === "string") {
+      return record.title;
+    }
+    if (typeof record.request_mode === "string") {
+      return record.request_mode;
+    }
+    return Object.keys(record).slice(0, 4).join(", ");
+  }
+  return String(value);
+}
+
 export default function App() {
   const [route, setRoute] = useState<RouteState>(() => parseRoute(window.location.pathname));
   const [draftPrompt, setDraftPrompt] = useState(SAMPLE_PROBLEM);
-  const [createRunError, setCreateRunError] = useState<string | null>(null);
-  const [followUpPrompt, setFollowUpPrompt] = useState("");
-  const [sidebarExpanded, setSidebarExpanded] = useState(false);
-  const [sidebarQuery, setSidebarQuery] = useState("");
-  const [inlineEditTarget, setInlineEditTarget] = useState<InlineEditTarget | null>(null);
   const [creatingRun, setCreatingRun] = useState(false);
-  const [downloading, setDownloading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [runs, setRuns] = useState<RunListItem[]>([]);
   const [statusMap, setStatusMap] = useState<Record<string, RunStatusResponse | null>>({});
   const [resultMap, setResultMap] = useState<Record<string, RunResultResponse | null>>({});
-  const [sessions, setSessions] = useState<Record<string, ConversationSessionData>>(() => loadStoredSessions());
-  const [hiddenRunIds, setHiddenRunIds] = useState<string[]>(() => loadHiddenRunIds());
 
   useEffect(() => {
     const onPopState = () => setRoute(parseRoute(window.location.pathname));
@@ -87,27 +66,11 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    saveStoredSessions(sessions);
-  }, [sessions]);
-
-  useEffect(() => {
-    saveHiddenRunIds(hiddenRunIds);
-  }, [hiddenRunIds]);
-
-  useEffect(() => {
-    if (route.name === "home") {
-      setSidebarExpanded(false);
-      setInlineEditTarget(null);
-    }
-  }, [route.name]);
-
-  useEffect(() => {
     let cancelled = false;
-
     listRuns()
       .then((payload) => {
         if (!cancelled) {
-          setRuns(payload.items.filter((item) => !hiddenRunIds.includes(item.run_id)));
+          setRuns(payload.items);
         }
       })
       .catch(() => {
@@ -115,11 +78,10 @@ export default function App() {
           setRuns([]);
         }
       });
-
     return () => {
       cancelled = true;
     };
-  }, [hiddenRunIds, route]);
+  }, [route]);
 
   useEffect(() => {
     if (route.name !== "conversation") {
@@ -135,24 +97,20 @@ export default function App() {
         if (cancelled) {
           return;
         }
-
         setStatusMap((current) => ({ ...current, [route.runId]: status }));
-
         if (status.status === "completed") {
           const result = await getRunResult(route.runId);
           if (!cancelled) {
             setResultMap((current) => ({ ...current, [route.runId]: result }));
-            setSidebarExpanded((current) => current || true);
           }
           return;
         }
-
         if (status.status !== "failed") {
-          timer = window.setTimeout(poll, 900);
+          timer = window.setTimeout(poll, 600);
         }
       } catch {
         if (!cancelled) {
-          timer = window.setTimeout(poll, 1200);
+          timer = window.setTimeout(poll, 900);
         }
       }
     };
@@ -167,463 +125,157 @@ export default function App() {
     };
   }, [route]);
 
-  const conversations = useMemo<ConversationSummary[]>(
-    () => runs.map(buildConversationSummary),
-    [runs],
-  );
-
-  const filteredConversations = useMemo(() => {
-    const needle = sidebarQuery.trim().toLowerCase();
-    if (!needle) {
-      return conversations;
-    }
-
-    return conversations.filter((conversation) =>
-      [conversation.title, conversation.inputProfile, conversation.experienceMode]
-        .join(" ")
-        .toLowerCase()
-        .includes(needle),
-    );
-  }, [conversations, sidebarQuery]);
-
-  const selectedConversation = useMemo(() => {
-    if (route.name !== "conversation") {
-      return null;
-    }
-
-    return (
-      conversations.find((conversation) => conversation.id === route.runId) ?? {
-        id: route.runId,
-        title: `会话 ${route.runId}`,
-        status: statusMap[route.runId]?.status ?? "running",
-        updatedAt: statusMap[route.runId]?.updated_at ?? null,
-        inputProfile: "unknown",
-        experienceMode: "hybrid",
-      }
-    );
-  }, [conversations, route, statusMap]);
-
-  const selectedStatus = route.name === "conversation" ? statusMap[route.runId] ?? null : null;
-  const selectedResult = route.name === "conversation" ? resultMap[route.runId] ?? null : null;
-  const stageMode = route.name === "home" ? "home" : getStageMode(selectedStatus);
-  const stagePresentation = getStagePresentation(selectedStatus);
-  const runtimeDocument =
-    route.name === "conversation" && stageMode === "workspace"
-      ? buildRuntimeDocument(selectedResult, selectedConversation)
-      : null;
-
-  useEffect(() => {
-    if (route.name !== "conversation" || !runtimeDocument) {
-      return;
-    }
-
-    setSessions((current) => {
-      const existing = current[route.runId];
-      if (existing?.versions.length) {
-        return current;
-      }
-
-      return {
-        ...current,
-        [route.runId]: ensureConversationSession(route.runId, existing, runtimeDocument, true),
-      };
-    });
-  }, [route, runtimeDocument]);
-
-  const activeSession =
-    route.name === "conversation" ? sessions[route.runId] ?? createEmptyConversationSession() : null;
-
-  const activeArtifact =
-    route.name === "conversation" && activeSession
-      ? buildArtifact(route.runId, activeSession.versions)
-      : null;
-
-  const activeVersion =
-    activeSession?.versions.find((version) => version.id === activeSession.ui.activeVersionId) ??
-    activeSession?.versions[activeSession.versions.length - 1] ??
-    null;
-
-  const messages =
-    route.name === "conversation"
-      ? buildConversationMessages({
-          summary: selectedConversation,
-          status: selectedStatus,
-          stage: stagePresentation,
-          artifact: activeArtifact,
-          localMessages: activeSession?.localMessages ?? [],
-        })
-      : [];
-
-  function updateConversationSession(updater: (session: ConversationSessionData) => ConversationSessionData) {
-    if (route.name !== "conversation") {
-      return;
-    }
-
-    setSessions((current) => {
-      const base =
-        current[route.runId] ??
-        ensureConversationSession(route.runId, undefined, runtimeDocument, stageMode === "workspace");
-      return {
-        ...current,
-        [route.runId]: updater(base),
-      };
-    });
-  }
-
   async function handleCreateRun() {
     if (!draftPrompt.trim()) {
       return;
     }
-
-    setCreateRunError(null);
     setCreatingRun(true);
+    setError(null);
     try {
-      const response = await createRun(draftPrompt);
-      setFollowUpPrompt("");
-      navigateTo(response.route);
-    } catch {
-      setCreateRunError("生成失败，请检查后端服务或稍后重试。");
+      const payload = await createRun(draftPrompt.trim());
+      navigateTo(payload.route);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Failed to start run");
     } finally {
       setCreatingRun(false);
     }
   }
 
-  function handleReturnHome() {
-    setDraftPrompt(SAMPLE_PROBLEM);
-    setCreateRunError(null);
-    setFollowUpPrompt("");
-    setSidebarQuery("");
-    setInlineEditTarget(null);
-    navigateTo("/");
-  }
+  const currentStatus = route.name === "conversation" ? statusMap[route.runId] ?? null : null;
+  const currentResult = route.name === "conversation" ? resultMap[route.runId] ?? null : null;
+  const workflowPlan = currentResult?.run_state.workflow_plan ?? currentStatus?.workflow_plan ?? [];
+  const stageStatus = currentResult?.run_state.stage_status ?? currentStatus?.stage_status ?? {};
 
-  function handleNewConversation() {
-    handleReturnHome();
-  }
-
-  async function handleDeleteConversation(conversationId: string) {
-    try {
-      await deleteRun(conversationId);
-    } catch {
-      return;
-    }
-
-    setHiddenRunIds((current) => (current.includes(conversationId) ? current : [...current, conversationId]));
-
-    setRuns((current) => current.filter((item) => item.run_id !== conversationId));
-    setStatusMap((current) => {
-      const next = { ...current };
-      delete next[conversationId];
-      return next;
-    });
-    setResultMap((current) => {
-      const next = { ...current };
-      delete next[conversationId];
-      return next;
-    });
-    setSessions((current) => {
-      const next = { ...current };
-      delete next[conversationId];
-      return next;
-    });
-
-    if (route.name === "conversation" && route.runId === conversationId) {
-      setInlineEditTarget(null);
-      navigateTo("/");
-    }
-  }
-
-  function handleOpenArtifact() {
-    if (!activeArtifact) {
-      return;
-    }
-
-    updateConversationSession((session) => ({
-      ...session,
-      ui: {
-        ...session.ui,
-        previewOpen: true,
-        activeArtifactId: activeArtifact.id,
-        activeVersionId: session.ui.activeVersionId ?? session.versions[session.versions.length - 1]?.id ?? null,
-      },
-    }));
-  }
-
-  function handleClosePreview() {
-    updateConversationSession((session) => ({
-      ...session,
-      ui: {
-        ...session.ui,
-        previewOpen: false,
-        runtimeFullscreen: false,
-      },
-    }));
-    setInlineEditTarget(null);
-  }
-
-  function handleChangeVersion(versionId: string) {
-    updateConversationSession((session) => ({
-      ...session,
-      ui: {
-        ...session.ui,
-        previewOpen: true,
-        activeVersionId: versionId,
-        activeArtifactId: activeArtifact?.id ?? session.ui.activeArtifactId,
-      },
-    }));
-  }
-
-  function handleChangeRuntimeView(runtimeView: "preview" | "code") {
-    updateConversationSession((session) => ({
-      ...session,
-      ui: {
-        ...session.ui,
-        runtimeView,
-      },
-    }));
-    if (runtimeView === "code") {
-      setInlineEditTarget(null);
-    }
-  }
-
-  function handleToggleFullscreen() {
-    updateConversationSession((session) => ({
-      ...session,
-      ui: {
-        ...session.ui,
-        runtimeFullscreen: !session.ui.runtimeFullscreen,
-      },
-    }));
-  }
-
-  function handleSubmitFollowUp() {
-    if (!activeSession || !activeVersion || !followUpPrompt.trim()) {
-      return;
-    }
-
-    const nextVersion = createArtifactVersion(
-      `V${activeSession.versions.length + 1}`,
-      "根据会话修改生成的候选版本",
-      applyPromptToDocument(activeVersion.document, followUpPrompt),
-      "conversation",
-    );
-
-    updateConversationSession((session) => ({
-      ...session,
-      versions: [...session.versions, nextVersion],
-      localMessages: [...session.localMessages, ...createFollowUpMessages(followUpPrompt)],
-      ui: {
-        ...session.ui,
-        previewOpen: true,
-        activeArtifactId: activeArtifact?.id ?? `artifact-${route.name === "conversation" ? route.runId : "current"}`,
-        activeVersionId: nextVersion.id,
-        runtimeView: "preview",
-      },
-    }));
-
-    setFollowUpPrompt("");
-  }
-
-  function handleChangeCode(value: string) {
-    if (!activeVersion) {
-      return;
-    }
-
-    updateConversationSession((session) => ({
-      ...session,
-      versions: session.versions.map((version) =>
-        version.id === activeVersion.id
-          ? {
-              ...version,
-              htmlSource: value,
-            }
-          : version,
-      ),
-    }));
-  }
-
-  function commitInlineEdit(nextDocument: ReturnType<typeof applyInlineEdit>, summary: string) {
-    if (!activeSession) {
-      return;
-    }
-
-    const nextVersion = createArtifactVersion(
-      `V${activeSession.versions.length + 1}`,
-      summary,
-      nextDocument,
-      "inline-edit",
-    );
-
-    updateConversationSession((session) => ({
-      ...session,
-      versions: [...session.versions, nextVersion],
-      localMessages: [...session.localMessages, ...createInlineEditMessages(inlineEditTarget?.label ?? "对象")],
-      ui: {
-        ...session.ui,
-        previewOpen: true,
-        activeArtifactId: activeArtifact?.id ?? session.ui.activeArtifactId,
-        activeVersionId: nextVersion.id,
-        runtimeView: "preview",
-      },
-    }));
-  }
-
-  function handleSaveDirectEdit(value: string) {
-    if (!inlineEditTarget || !activeVersion) {
-      return;
-    }
-
-    commitInlineEdit(
-      applyInlineEdit(activeVersion.document, inlineEditTarget.field, value),
-      `更新${inlineEditTarget.label}`,
-    );
-    setInlineEditTarget(null);
-  }
-
-  function handleSaveAiEdit(prompt: string) {
-    if (!inlineEditTarget || !activeVersion) {
-      return;
-    }
-
-    const modified = applyPromptToDocument(
-      applyInlineEdit(activeVersion.document, inlineEditTarget.field, prompt),
-      prompt,
-    );
-    commitInlineEdit(modified, `AI 调整${inlineEditTarget.label}`);
-    setInlineEditTarget(null);
-  }
-
-  async function handleDownload() {
-    if (route.name !== "conversation") {
-      return;
-    }
-
-    setDownloading(true);
-    try {
-      await createHtmlExport(route.runId);
-      window.location.href = exportDownloadUrl(route.runId);
-    } catch {
-      if (!activeVersion) {
-        return;
-      }
-
-      const blob = new Blob([buildHtmlSource(activeVersion)], { type: "text/html;charset=utf-8" });
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = activeVersion.document.artifactName;
-      anchor.click();
-      URL.revokeObjectURL(url);
-    } finally {
-      setDownloading(false);
-    }
-  }
-
-  const rail = sidebarExpanded ? null : (
-    <UtilityRail
-      expanded={sidebarExpanded}
-      onToggleSidebar={() => setSidebarExpanded((current) => !current)}
-      onNewConversation={handleNewConversation}
-      onSearchConversation={() => setSidebarExpanded(true)}
-    />
-  );
-
-  const sidebar = sidebarExpanded ? (
-    <CollapsibleConversationSidebar
-      conversations={filteredConversations}
-      selectedConversationId={route.name === "conversation" ? route.runId : null}
-      query={sidebarQuery}
-      onQueryChange={setSidebarQuery}
-      onNewConversation={handleNewConversation}
-      onReturnHome={handleReturnHome}
-      onCollapse={() => setSidebarExpanded(false)}
-      onSelectConversation={(conversationId) => navigateTo(`/simulation/${conversationId}`)}
-      onDeleteConversation={handleDeleteConversation}
-    />
-  ) : null;
-
-  const main =
-    stageMode === "home" ? (
-      <HomeInputStage
-        value={draftPrompt}
-        loading={creatingRun}
-        errorMessage={createRunError}
-        onChange={(value) => {
-          setDraftPrompt(value);
-          if (createRunError) {
-            setCreateRunError(null);
-          }
-        }}
-        onSubmit={handleCreateRun}
-        onReturnHome={handleReturnHome}
-      />
-    ) : stageMode === "generating" ? (
-      <GenerationStagePlayer stage={stagePresentation} percent={selectedStatus?.percent ?? 12} />
-    ) : (
-      <ConversationContentPanel
-        messages={messages}
-        artifact={activeArtifact}
-        activeArtifactId={activeSession?.ui.activeArtifactId ?? null}
-        activeVersionLabel={activeVersion?.label ?? "V1"}
-        followUpValue={followUpPrompt}
-        onFollowUpChange={setFollowUpPrompt}
-        onSubmitFollowUp={handleSubmitFollowUp}
-        onOpenArtifact={handleOpenArtifact}
-      />
-    );
-
-  const preview =
-    route.name === "conversation" &&
-    stageMode === "workspace" &&
-    activeSession?.ui.previewOpen &&
-    activeVersion &&
-    activeArtifact ? (
-      <PreviewPanel
-        versions={activeSession.versions}
-        activeVersion={activeVersion}
-        artifactName={activeArtifact.name}
-        runtimeView={activeSession.ui.runtimeView}
-        downloading={downloading}
-        inlineEditTarget={inlineEditTarget}
-        onChangeVersion={handleChangeVersion}
-        onChangeRuntimeView={handleChangeRuntimeView}
-        onRequestEdit={setInlineEditTarget}
-        onRequestPrimaryEdit={() => handleChangeRuntimeView("code")}
-        onToggleFullscreen={handleToggleFullscreen}
-        onDownload={handleDownload}
-        onClose={handleClosePreview}
-        onCancelInlineEdit={() => setInlineEditTarget(null)}
-        onSaveDirectEdit={handleSaveDirectEdit}
-        onSaveAiEdit={handleSaveAiEdit}
-        onChangeCode={handleChangeCode}
-      />
-    ) : null;
-
-  const fullscreenLayer =
-    route.name === "conversation" &&
-    activeSession?.ui.runtimeFullscreen &&
-    activeVersion ? (
-      <FullscreenRuntimeModal onClose={handleToggleFullscreen}>
-        <div className="surface-panel relative overflow-hidden">
-          <div className="runtime-toolbar runtime-toolbar-modal">
-            <div className="min-w-0">
-              <p className="runtime-toolbar-file">{activeVersion.document.artifactName}</p>
-              <p className="runtime-toolbar-meta">{activeVersion.label}</p>
-            </div>
-            <button type="button" className="toolbar-close-button" onClick={handleToggleFullscreen}>
-              退出全屏
+  return (
+    <div className="app-shell">
+      <aside className="surface-panel" style={{ width: 280, margin: 24, padding: 20 }}>
+        <h2 className="font-display" style={{ marginTop: 0 }}>Runs</h2>
+        <button
+          className="secondary-chip"
+          type="button"
+          onClick={() => navigateTo("/")}
+          style={{ marginBottom: 16 }}
+        >
+          New Run
+        </button>
+        <div style={{ display: "grid", gap: 10 }}>
+          {runs.map((item) => (
+            <button
+              key={item.run_id}
+              className="surface-soft"
+              type="button"
+              style={{ padding: 12, textAlign: "left" }}
+              onClick={() => navigateTo(`/simulation/${item.run_id}`)}
+            >
+              <strong>{item.title}</strong>
+              <div>{item.status}</div>
             </button>
-          </div>
-          <div className="relative max-h-[calc(100vh-8rem)] overflow-hidden px-6 py-6">
-            <HtmlRuntimeFrame
-              title={activeVersion.document.artifactName}
-              source={buildHtmlSource(activeVersion)}
-              fullscreen
-            />
-          </div>
+          ))}
         </div>
-      </FullscreenRuntimeModal>
-    ) : null;
+      </aside>
 
-  return <AppShell rail={rail} sidebar={sidebar} main={main} preview={preview} fullscreenLayer={fullscreenLayer} />;
+      <main style={{ flex: 1, padding: 24 }}>
+        {route.name === "home" ? (
+          <section className="surface-panel" style={{ padding: 24 }}>
+            <h1 className="font-display">Physics Problem to Simulation</h1>
+            <p>Submit a physics prompt and generate a reviewed runtime package.</p>
+            <label htmlFor="problem-input" style={{ display: "block", marginBottom: 8 }}>
+              Problem Input
+            </label>
+            <textarea
+              id="problem-input"
+              aria-label="Problem Input"
+              className="studio-input"
+              rows={8}
+              value={draftPrompt}
+              onChange={(event) => setDraftPrompt(event.target.value)}
+            />
+            <div style={{ marginTop: 16, display: "flex", gap: 12, alignItems: "center" }}>
+              <button className="primary-action-button" type="button" onClick={handleCreateRun} disabled={creatingRun}>
+                {creatingRun ? "Starting..." : "Start Run"}
+              </button>
+              {error ? <span>{error}</span> : null}
+            </div>
+          </section>
+        ) : (
+          <section style={{ display: "grid", gap: 16 }}>
+            <section className="surface-panel" style={{ padding: 20 }}>
+              <h1 className="font-display" style={{ marginTop: 0 }}>Run Overview</h1>
+              <p>Status: {currentStatus?.status ?? "loading"}</p>
+              <p>Active Stage: {currentStatus?.active_stage ?? currentResult?.run_state.active_stage ?? "loading"}</p>
+            </section>
+
+            <section className="surface-panel" style={{ padding: 20 }}>
+              <h2 className="font-display" style={{ marginTop: 0 }}>Workflow Plan</h2>
+              <ul>
+                {workflowPlan.map((stage) => {
+                  const info = stageStatus[stage];
+                  return (
+                    <li key={stage}>
+                      <strong>{stage}</strong> - {info?.status ?? "pending"} - attempts {info?.attempts ?? 0}
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+
+            <section className="surface-panel" style={{ padding: 20 }}>
+              <h2 className="font-display" style={{ marginTop: 0 }}>Approved Artifacts</h2>
+              <ul>
+                {Object.entries(currentResult?.approved_artifacts ?? {}).map(([name, value]) => (
+                  <li key={name}>
+                    <strong>{name}</strong>: {summarizeArtifact(value)}
+                  </li>
+                ))}
+              </ul>
+            </section>
+
+            <section className="surface-panel" style={{ padding: 20 }}>
+              <h2 className="font-display" style={{ marginTop: 0 }}>Current Artifacts</h2>
+              <ul>
+                {Object.entries(currentResult?.artifacts ?? {}).map(([name, value]) => (
+                  <li key={name}>
+                    <strong>{name}</strong>: {summarizeArtifact(value)}
+                  </li>
+                ))}
+              </ul>
+            </section>
+
+            <section className="surface-panel" style={{ padding: 20 }}>
+              <h2 className="font-display" style={{ marginTop: 0 }}>Execution Trace</h2>
+              <ul>
+                {(currentResult?.execution_trace ?? []).map((entry, index) => {
+                  const event = entry as Record<string, unknown>;
+                  return (
+                  <li key={`${String(event.stage)}-${String(event.event)}-${index}`}>
+                    <strong>{String(event.stage)}</strong> - {String(event.event)}
+                  </li>
+                  );
+                })}
+              </ul>
+            </section>
+
+            <section className="surface-panel" style={{ padding: 20 }}>
+              <h2 className="font-display" style={{ marginTop: 0 }}>Runtime Preview</h2>
+              <iframe
+                title="delivery-runtime"
+                style={{ width: "100%", minHeight: 320, border: "1px solid var(--studio-line)" }}
+                srcDoc={currentResult?.delivery_runtime?.html ?? ""}
+              />
+            </section>
+
+            <section className="surface-panel" style={{ padding: 20 }}>
+              <h2 className="font-display" style={{ marginTop: 0 }}>Generated Files</h2>
+              {Object.entries(currentResult?.generated_files ?? {}).map(([name, content]) => (
+                <article key={name} style={{ marginBottom: 16 }}>
+                  <h3>{name}</h3>
+                  <pre style={{ overflowX: "auto", whiteSpace: "pre-wrap" }}>{content}</pre>
+                </article>
+              ))}
+            </section>
+          </section>
+        )}
+      </main>
+    </div>
+  );
 }

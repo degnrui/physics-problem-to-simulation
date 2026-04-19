@@ -13,101 +13,87 @@ function createJsonResponse(payload: unknown) {
   );
 }
 
-function mockFetchWithRunState() {
-  let deleted = false;
-
+function mockFetchWithNewContract() {
   const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
 
-    if (url.endsWith("/api/problem-to-simulation/runs")) {
+    if (url.endsWith("/api/problem-to-simulation/runs") && init?.method === "POST") {
       return createJsonResponse({
-        items: deleted
-          ? []
-          : [
-              {
-                run_id: "run-1",
-                title: "双绳弹力位移演示",
-                status: "completed",
-                updated_at: "2026-04-18T15:00:00Z",
-                input_profile: "problem_only",
-                experience_mode: "hybrid",
-                score: 96,
-                export_ready: true,
-              },
-            ],
+        run_id: "run-new",
+        status: "queued",
+        route: "/simulation/run-new",
+        status_url: "/api/problem-to-simulation/runs/run-new",
       });
     }
 
-    if (url.endsWith("/api/problem-to-simulation/runs/run-1") && init?.method === "DELETE") {
-      deleted = true;
+    if (url.endsWith("/api/problem-to-simulation/runs")) {
       return createJsonResponse({
-        run_id: "run-1",
-        deleted: true,
+        items: [
+          {
+            run_id: "run-1",
+            title: "new_simulation",
+            status: "completed",
+            updated_at: "2026-04-20T09:00:00Z",
+            input_profile: "problem_only",
+            request_mode: "new_simulation",
+          },
+        ],
       });
     }
 
     if (url.endsWith("/api/problem-to-simulation/runs/run-1/result")) {
       return createJsonResponse({
         run_id: "run-1",
-        task_plan: {},
-        stage_graph: [
-          "run_profiling",
-          "knowledge_grounding",
-          "structured_task_model",
-          "instructional_design_brief",
-          "physics_model",
-          "representation_interaction_design",
-          "experience_mode_adaptation",
-          "simulation_spec_generation",
-          "final_validation",
-          "compile_delivery",
+        run_state: {
+          request_mode: "new_simulation",
+          request_profile: { topic_hint: "high-school-physics" },
+          workflow_plan: [
+            "request_analysis",
+            "domain_grounding",
+            "instructional_modeling",
+            "simulation_design",
+            "runtime_package_assembly",
+            "code_generation",
+            "runtime_validation",
+          ],
+          active_stage: "completed",
+          stage_status: {
+            request_analysis: { name: "request_analysis", status: "approved", attempts: 1, score: 100, issues: [] },
+            domain_grounding: { name: "domain_grounding", status: "approved", attempts: 1, score: 100, issues: [] },
+            instructional_modeling: { name: "instructional_modeling", status: "approved", attempts: 1, score: 100, issues: [] },
+            simulation_design: { name: "simulation_design", status: "approved", attempts: 1, score: 100, issues: [] },
+            runtime_package_assembly: { name: "runtime_package_assembly", status: "approved", attempts: 1, score: 100, issues: [] },
+            code_generation: { name: "code_generation", status: "approved", attempts: 2, score: 100, issues: [] },
+            runtime_validation: { name: "runtime_validation", status: "approved", attempts: 1, score: 100, issues: [] },
+          },
+        },
+        artifacts: {
+          code_generation: {
+            primary_file: "simulation.html",
+          },
+        },
+        approved_artifacts: {
+          request_analysis: { input_profile: "problem_only" },
+          simulation_design: {
+            title: "Physics Runtime Studio",
+            controls: [{ id: "play" }],
+            charts: [{ id: "state-chart" }],
+          },
+        },
+        runtime_package: {
+          required_features: ["canvas", "play", "pause", "reset", "measurement-panel"],
+        },
+        generated_files: {
+          "simulation.html": "<html><body><canvas id='simulation-canvas'></canvas><button>play</button></body></html>",
+        },
+        delivery_runtime: {
+          primary_file: "simulation.html",
+          html: "<html><body><canvas id='simulation-canvas'></canvas><button>play</button><button>pause</button><button>reset</button><input type='range' /><section id='measurement-panel'>measurement</section></body></html>",
+        },
+        execution_trace: [
+          { timestamp: "2026-04-20T09:00:00Z", stage: "code_generation", event: "generated" },
+          { timestamp: "2026-04-20T09:00:01Z", stage: "runtime_validation", event: "approved" },
         ],
-        artifacts: {},
-        stage_validations: {},
-        generation_trace: [],
-        run_profiling: { input_profile: "problem_only", experience_mode: "hybrid" },
-        evidence_completion: null,
-        knowledge_grounding: {},
-        structured_task_model: { summary: "双绳弹力位移演示" },
-        instructional_design_brief: {
-          teaching_goal: "理解回复力与位移的关系",
-          interaction_strategy: "拖动参数并比较回复趋势",
-        },
-        physics_model: { relations: ["F=2Tcosθ"] },
-        representation_interaction_design: {},
-        experience_mode_adaptation: {},
-        simulation_spec_generation: {
-          scene_spec: {
-            scene_type: "generic-physics-lab",
-            template_id: "physics-restoring-lab-v1",
-            controls: [],
-            parameters: {
-              derived_quantities: {
-                "合力方向": "始终指向平衡位置",
-              },
-            },
-          },
-          simulation_spec: {
-            template_id: "physics-restoring-lab-v1",
-          },
-        },
-        final_validation: {
-          export_ready: true,
-          ready_for_delivery: true,
-        },
-        compile_delivery: {
-          simulation_blueprint: {},
-          renderer_payload: {
-            hero_panel: {
-              subtitle: "理解回复力与位移的关系",
-            },
-          },
-          delivery_bundle: {
-            teacher_script: ["观察合力方向", "比较位移与回复力变化"],
-            observation_targets: ["回复力", "摩擦耗能"],
-          },
-        },
-        task_log: [],
       });
     }
 
@@ -115,20 +101,36 @@ function mockFetchWithRunState() {
       return createJsonResponse({
         run_id: "run-1",
         status: "completed",
-        current_stage: "编译 simulation",
-        current_step_index: 4,
-        total_steps: 5,
-        percent: 100,
-        started_at: "2026-04-18T14:58:00Z",
-        updated_at: "2026-04-18T15:00:00Z",
-        finished_at: "2026-04-18T15:00:00Z",
-        steps: [
-          { id: "summary", label: "需求摘要", status: "completed", artifacts_written: [], error: "" },
-          { id: "model", label: "物理模型", status: "completed", artifacts_written: [], error: "" },
-          { id: "teaching", label: "教学动作", status: "completed", artifacts_written: [], error: "" },
-          { id: "layout", label: "页面内容", status: "completed", artifacts_written: [], error: "" },
-          { id: "compile", label: "编译 simulation", status: "completed", artifacts_written: ["simulation-runtime.html"], error: "" },
+        active_stage: "completed",
+        workflow_plan: [
+          "request_analysis",
+          "domain_grounding",
+          "instructional_modeling",
+          "simulation_design",
+          "runtime_package_assembly",
+          "code_generation",
+          "runtime_validation",
         ],
+        stage_status: {
+          request_analysis: { name: "request_analysis", status: "approved", attempts: 1, score: 100, issues: [] },
+          runtime_validation: { name: "runtime_validation", status: "approved", attempts: 1, score: 100, issues: [] },
+        },
+        started_at: "2026-04-20T08:59:00Z",
+        updated_at: "2026-04-20T09:00:01Z",
+        finished_at: "2026-04-20T09:00:01Z",
+      });
+    }
+
+    if (url.endsWith("/api/problem-to-simulation/runs/run-new")) {
+      return createJsonResponse({
+        run_id: "run-new",
+        status: "queued",
+        active_stage: "queued",
+        workflow_plan: [],
+        stage_status: {},
+        started_at: "2026-04-20T09:00:00Z",
+        updated_at: "2026-04-20T09:00:00Z",
+        finished_at: null,
       });
     }
 
@@ -148,62 +150,20 @@ function mockFetchWithRunState() {
   return fetchMock;
 }
 
-describe("simulation studio shell", () => {
+describe("app with the new backend contract", () => {
   beforeEach(() => {
-    localStorage.clear();
     vi.restoreAllMocks();
+    localStorage.clear();
   });
 
-  it("renders the home input stage without a preview panel", async () => {
-    mockFetchWithRunState();
-    window.history.pushState({}, "", "/");
-
-    render(<App />);
-
-    expect(await screen.findByText("ClassSim")).toBeInTheDocument();
-    expect(screen.queryByText(/teacher simulation studio/i)).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("heading", { name: "把物理题目转成可教学的 simulation" }),
-    ).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("模板入口")).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("生成模式")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("preview-panel")).not.toBeInTheDocument();
-    expect(screen.queryByText("双绳弹力位移演示")).not.toBeInTheDocument();
-    expect(screen.getByRole("textbox", { name: "题目输入" })).toHaveValue(
-      "如图所示，两根相同的橡皮绳连接物块，沿 AB 中垂线拉至 O 点后释放。请生成一个适合课堂讲评的 simulation，突出回复力方向、摩擦耗能和教学观察顺序。",
-    );
-  });
-
-  it("starts a run directly from the home stage with the starter prompt", async () => {
-    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-
-      if (url.endsWith("/api/problem-to-simulation/runs") && init?.method === "POST") {
-        return createJsonResponse({
-          run_id: "run-new",
-          status: "queued",
-          route: "/simulation/run-new",
-          status_url: "/api/problem-to-simulation/runs/run-new",
-        });
-      }
-
-      if (url.endsWith("/api/problem-to-simulation/runs")) {
-        return createJsonResponse({ items: [] });
-      }
-
-      return Promise.reject(new Error(`Unhandled URL: ${url}`));
-    });
-
-    vi.stubGlobal("fetch", fetchMock);
+  it("starts a run from the home page", async () => {
+    const fetchMock = mockFetchWithNewContract();
     window.history.pushState({}, "", "/");
     const user = userEvent.setup();
 
     render(<App />);
 
-    const submitButton = await screen.findByRole("button", { name: "开始生成" });
-    expect(submitButton).toBeEnabled();
-
-    await user.click(submitButton);
+    await user.click(await screen.findByRole("button", { name: "Start Run" }));
 
     await waitFor(() => {
       expect(window.location.pathname).toBe("/simulation/run-new");
@@ -215,209 +175,23 @@ describe("simulation studio shell", () => {
     );
   });
 
-  it("starts a run after entering a custom prompt", async () => {
-    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-
-      if (url.endsWith("/api/problem-to-simulation/runs") && init?.method === "POST") {
-        return createJsonResponse({
-          run_id: "run-custom",
-          status: "queued",
-          route: "/simulation/run-custom",
-          status_url: "/api/problem-to-simulation/runs/run-custom",
-        });
-      }
-
-      if (url.endsWith("/api/problem-to-simulation/runs")) {
-        return createJsonResponse({ items: [] });
-      }
-
-      return Promise.reject(new Error(`Unhandled URL: ${url}`));
-    });
-
-    vi.stubGlobal("fetch", fetchMock);
-    window.history.pushState({}, "", "/");
-    const user = userEvent.setup();
-
-    render(<App />);
-
-    const promptInput = screen.getByRole("textbox", { name: "题目输入" });
-    await user.clear(promptInput);
-    await user.type(promptInput, "请把平抛运动题做成课堂演示 simulation");
-    await user.click(screen.getByRole("button", { name: "开始生成" }));
-
-    await waitFor(() => {
-      expect(window.location.pathname).toBe("/simulation/run-custom");
-    });
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/api/problem-to-simulation/runs",
-      expect.objectContaining({
-        method: "POST",
-        body: JSON.stringify({
-          text: "请把平抛运动题做成课堂演示 simulation",
-          mode: "llm-assisted",
-        }),
-      }),
-    );
-  });
-
-  it("shows an error message when run creation fails", async () => {
-    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-
-      if (url.endsWith("/api/problem-to-simulation/runs") && init?.method === "POST") {
-        return Promise.resolve(
-          new Response("backend unavailable", {
-            status: 503,
-            headers: { "Content-Type": "text/plain" },
-          }),
-        );
-      }
-
-      if (url.endsWith("/api/problem-to-simulation/runs")) {
-        return createJsonResponse({ items: [] });
-      }
-
-      return Promise.reject(new Error(`Unhandled URL: ${url}`));
-    });
-
-    vi.stubGlobal("fetch", fetchMock);
-    window.history.pushState({}, "", "/");
-    const user = userEvent.setup();
-
-    render(<App />);
-
-    const promptInput = screen.getByRole("textbox", { name: "题目输入" });
-    await user.clear(promptInput);
-    await user.type(promptInput, "测试失败提示");
-    await user.click(screen.getByRole("button", { name: "开始生成" }));
-
-    expect(await screen.findByText("生成失败，请检查后端服务或稍后重试。")).toBeInTheDocument();
-    expect(window.location.pathname).toBe("/");
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/api/problem-to-simulation/runs",
-      expect.objectContaining({ method: "POST" }),
-    );
-  });
-
-  it("opens the preview panel automatically when a run is completed", async () => {
-    mockFetchWithRunState();
+  it("renders stage status, approved artifacts, execution trace, and runtime preview from the new contract", async () => {
+    mockFetchWithNewContract();
     window.history.pushState({}, "", "/simulation/run-1");
 
     render(<App />);
 
-    expect(await screen.findByTestId("preview-panel")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "simulation-runtime.html" })).toHaveAttribute(
-      "data-active",
-      "true",
-    );
-  });
-
-  it("closes and reopens preview from the artifact card", async () => {
-    mockFetchWithRunState();
-    window.history.pushState({}, "", "/simulation/run-1");
-    const user = userEvent.setup();
-
-    render(<App />);
-
-    expect(await screen.findByTestId("preview-panel")).toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: "关闭预览" }));
-
-    await waitFor(() => {
-      expect(screen.queryByTestId("preview-panel")).not.toBeInTheDocument();
-    });
-
-    await user.click(screen.getByRole("button", { name: "simulation-runtime.html" }));
-
-    expect(await screen.findByTestId("preview-panel")).toBeInTheDocument();
-  });
-
-  it("updates the rendered html after editing code mode", async () => {
-    mockFetchWithRunState();
-    window.history.pushState({}, "", "/simulation/run-1");
-    const user = userEvent.setup();
-
-    render(<App />);
-
-    expect(await screen.findByTestId("preview-panel")).toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: "代码" }));
-
-    const editor = screen.getByRole("textbox", { name: "HTML 代码编辑器" });
-    const nextSource = "<!DOCTYPE html><html lang=\"zh-CN\"><body><main>测试代码预览</main></body></html>";
-    await user.clear(editor);
-    await user.type(editor, nextSource);
-
-    await user.click(screen.getByRole("button", { name: "预览" }));
-
-    const frame = screen.getByTitle("simulation-runtime.html");
-    expect(frame).toHaveAttribute("srcdoc");
-    expect(frame.getAttribute("srcdoc")).toContain("测试代码预览");
-  });
-
-  it("returns to the home stage when clicking the expanded sidebar brand", async () => {
-    mockFetchWithRunState();
-    window.history.pushState({}, "", "/simulation/run-1");
-    const user = userEvent.setup();
-
-    render(<App />);
-
-    expect(await screen.findByTestId("preview-panel")).toBeInTheDocument();
-    expect(screen.getByText("dengrui")).toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: "收起侧边栏" })).toHaveLength(1);
-    expect(document.querySelector(".sidebar-conversation-card")).toBeNull();
-
-    await user.click(await screen.findByRole("button", { name: "ClassSim 返回首页" }));
-
-    expect(screen.getByText("ClassSim")).toBeInTheDocument();
-    expect(
-      screen.queryByRole("heading", { name: "把物理题目转成可教学的 simulation" }),
-    ).not.toBeInTheDocument();
-    expect(window.location.pathname).toBe("/");
-  });
-
-  it("shows the quick-action menu on hover and keeps the selected option visible", async () => {
-    mockFetchWithRunState();
-    window.history.pushState({}, "", "/");
-    const user = userEvent.setup();
-
-    render(<App />);
-
-    const trigger = screen.getByRole("button", { name: "添加内容" });
-    await user.hover(trigger);
-    expect(screen.getByRole("button", { name: "添加照片或文件" })).toBeVisible();
-    expect(screen.getByRole("button", { name: "网页搜索" })).toBeVisible();
-
-    await user.click(screen.getByRole("button", { name: "网页搜索" }));
-    expect(await screen.findByText("网页搜索")).toBeInTheDocument();
-
-    await user.unhover(trigger);
-    await waitFor(() => {
-      expect(screen.queryByRole("button", { name: "添加照片或文件" })).not.toBeInTheDocument();
-    });
-  });
-
-  it("deletes the current conversation and returns to the home stage", async () => {
-    const fetchMock = mockFetchWithRunState();
-    window.history.pushState({}, "", "/simulation/run-1");
-    const user = userEvent.setup();
-
-    render(<App />);
-
-    expect(await screen.findByTestId("preview-panel")).toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: "删除会话 双绳弹力位移演示" }));
-
-    await waitFor(() => {
-      expect(window.location.pathname).toBe("/");
-    });
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/api/problem-to-simulation/runs/run-1",
-      expect.objectContaining({ method: "DELETE" }),
-    );
-    expect(screen.getByText("ClassSim")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Workflow Plan" })).toBeInTheDocument();
+    expect(screen.getAllByText("request_analysis").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("simulation_design").length).toBeGreaterThan(0);
+    expect(screen.getByRole("heading", { name: "Approved Artifacts" })).toBeInTheDocument();
+    expect(screen.getByText((content) => content.includes("Physics Runtime Studio"))).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Execution Trace" })).toBeInTheDocument();
+    expect(screen.getAllByText("code_generation").length).toBeGreaterThan(0);
+    expect(screen.getByRole("heading", { name: "Runtime Preview" })).toBeInTheDocument();
+    expect(screen.getByTitle("delivery-runtime")).toHaveAttribute("srcdoc", expect.stringContaining("simulation-canvas"));
+    expect(screen.queryByText("compile_delivery")).not.toBeInTheDocument();
+    expect(screen.queryByText("renderer_payload")).not.toBeInTheDocument();
+    expect(screen.queryByText("delivery_bundle")).not.toBeInTheDocument();
   });
 });

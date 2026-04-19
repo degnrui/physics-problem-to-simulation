@@ -1,0 +1,9 @@
+{
+  "child_nodes": [
+    "scene_design",
+    "control_design",
+    "chart_measurement_design",
+    "pedagogical_view_design",
+    "design_merge"
+  ]
+}

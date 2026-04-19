@@ -1,0 +1,21 @@
+{
+  "required_fields": [
+    "generator_target",
+    "required_features",
+    "forbidden_outputs",
+    "design_spec"
+  ],
+  "generator_target": "single_file_html_runtime",
+  "required_features": [
+    "canvas",
+    "play",
+    "pause",
+    "reset",
+    "measurement-panel"
+  ],
+  "forbidden_outputs": [
+    "Simulation Contract",
+    "Simulation Payload",
+    "payload dump"
+  ]
+}
