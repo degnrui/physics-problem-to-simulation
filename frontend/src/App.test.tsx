@@ -29,9 +29,9 @@ function mockFetchWithRunState() {
                 title: "双绳弹力位移演示",
                 status: "completed",
                 updated_at: "2026-04-18T15:00:00Z",
-                problem_family: "elastic-motion",
-                model_family: "双绳弹力模型",
-                simulation_mode: "interactive",
+                input_profile: "problem_only",
+                experience_mode: "hybrid",
+                score: 96,
                 export_ready: true,
               },
             ],
@@ -49,33 +49,63 @@ function mockFetchWithRunState() {
     if (url.endsWith("/api/problem-to-simulation/runs/run-1/result")) {
       return createJsonResponse({
         run_id: "run-1",
-        planner: { model_family: "双绳弹力模型" },
         task_plan: {},
-        problem_profile: { summary: "双绳弹力位移演示" },
-        physics_model: { key_relation: "F=2Tcosθ" },
-        teaching_plan: { objective: "理解回复力与位移的关系" },
-        scene_spec: {
-          scene_type: "elastic-motion",
-          template_id: "elastic-restoring-motion-v1",
-          controls: [],
-          parameters: {
-            derived_quantities: {
-              "合力方向": "始终指向平衡位置",
+        stage_graph: [
+          "run_profiling",
+          "knowledge_grounding",
+          "structured_task_model",
+          "instructional_design_brief",
+          "physics_model",
+          "representation_interaction_design",
+          "experience_mode_adaptation",
+          "simulation_spec_generation",
+          "final_validation",
+          "compile_delivery",
+        ],
+        artifacts: {},
+        stage_validations: {},
+        generation_trace: [],
+        run_profiling: { input_profile: "problem_only", experience_mode: "hybrid" },
+        evidence_completion: null,
+        knowledge_grounding: {},
+        structured_task_model: { summary: "双绳弹力位移演示" },
+        instructional_design_brief: {
+          teaching_goal: "理解回复力与位移的关系",
+          interaction_strategy: "拖动参数并比较回复趋势",
+        },
+        physics_model: { relations: ["F=2Tcosθ"] },
+        representation_interaction_design: {},
+        experience_mode_adaptation: {},
+        simulation_spec_generation: {
+          scene_spec: {
+            scene_type: "generic-physics-lab",
+            template_id: "physics-restoring-lab-v1",
+            controls: [],
+            parameters: {
+              derived_quantities: {
+                "合力方向": "始终指向平衡位置",
+              },
             },
           },
+          simulation_spec: {
+            template_id: "physics-restoring-lab-v1",
+          },
         },
-        simulation_spec: {
-          template_id: "elastic-restoring-motion-v1",
-        },
-        simulation_blueprint: {},
-        renderer_payload: null,
-        delivery_bundle: {
-          teacher_script: ["观察合力方向", "比较位移与回复力变化"],
-          observation_targets: ["回复力", "摩擦耗能"],
-        },
-        validation_report: {
+        final_validation: {
           export_ready: true,
           ready_for_delivery: true,
+        },
+        compile_delivery: {
+          simulation_blueprint: {},
+          renderer_payload: {
+            hero_panel: {
+              subtitle: "理解回复力与位移的关系",
+            },
+          },
+          delivery_bundle: {
+            teacher_script: ["观察合力方向", "比较位移与回复力变化"],
+            observation_targets: ["回复力", "摩擦耗能"],
+          },
         },
         task_log: [],
       });

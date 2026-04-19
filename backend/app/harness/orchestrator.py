@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 import shutil
 from contextlib import suppress
@@ -13,31 +15,13 @@ from app.harness.html_export import write_export_html
 from app.harness.model_executor import ModelExecutionTimeoutError, ModelExecutor
 from app.harness.run_logger import RunLogger
 from app.harness.run_state import RunStateStore
-from app.harness.task_registry import build_task_plan
-from app.workers.modeler import build_physics_model
-from app.workers.parser import build_problem_profile
-from app.workers.pedagogy import build_teaching_plan
-from app.workers.planner import build_plan_metadata
-from app.workers.renderer import (
-    build_delivery_bundle,
-    build_renderer_payload,
-    build_simulation_blueprint,
+from app.harness.skill_registry import SkillRegistry
+from app.harness.stage_builders import (
+    build_run_profiling,
+    build_stage_contracts,
 )
-from app.workers.scene_builder import build_scene_spec, build_simulation_spec
-from app.workers.validator import build_validation_report
-
-STAGE_SEQUENCE = [
-    "planning",
-    "modeling",
-    "pedagogy",
-    "scene",
-    "simulation",
-    "simulation",
-    "simulation",
-    "simulation",
-    "validation",
-    "packaging",
-]
+from app.harness.stage_runtime import StageContract, ValidationResult
+from app.harness.task_registry import build_task_plan
 
 _RUN_LOCK = threading.Lock()
 
@@ -53,25 +37,20 @@ def _create_run_dir(runs_root: Path) -> Tuple[str, Path]:
     return run_id, run_dir
 
 
-def plan_problem_to_simulation(problem: ProblemInput) -> Dict[str, Any]:
-    planner_metadata = build_plan_metadata(problem)
-    task_plan = build_task_plan(
-        simulation_ready=planner_metadata["simulation_ready"],
-        stage_type=planner_metadata["stage_type"],
-        problem_family=planner_metadata["problem_family"],
-        model_family=planner_metadata["model_family"],
-        simulation_mode=planner_metadata["simulation_mode"],
-    )
-    return {
-        "planner": planner_metadata,
-        "task_plan": task_plan,
-    }
-
-
 def _write_json(path: Path, payload: Dict[str, Any]) -> None:
     tmp_path = path.with_suffix(path.suffix + ".tmp")
     tmp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     tmp_path.replace(path)
+
+
+def plan_problem_to_simulation(problem: ProblemInput) -> Dict[str, Any]:
+    run_profiling = build_run_profiling(problem, {})
+    task_plan = build_task_plan(run_profiling)
+    return {
+        "run_profiling": run_profiling,
+        "task_plan": task_plan,
+        "stage_graph": [task["type"] for task in task_plan["tasks"]],
+    }
 
 
 def _generation_record(metadata: Dict[str, Any], artifact_name: str) -> Dict[str, Any]:
@@ -83,16 +62,34 @@ def _generation_record(metadata: Dict[str, Any], artifact_name: str) -> Dict[str
     }
 
 
-def _run_llm_enhanced_worker(
+def _build_stage_prompt(
+    contract: StageContract,
+    skill_registry: SkillRegistry,
+    problem: ProblemInput,
+    stage_inputs: Dict[str, Dict[str, Any]],
+) -> str:
+    prompt_bundle = skill_registry.prompt_bundle(
+        skill_path=contract.skill_path,
+        validator_path=contract.validator_path,
+        repair_path=contract.repair_path,
+    )
+    return (
+        f"{prompt_bundle['skill']}\n\n"
+        f"Problem request:\n{json.dumps(problem.model_dump(), ensure_ascii=False, indent=2)}\n\n"
+        f"Input artifacts:\n{json.dumps(stage_inputs, ensure_ascii=False, indent=2)}\n\n"
+        f"Return a JSON object with keys: {', '.join(contract.required_keys)}."
+    )
+
+
+def _run_llm_enhanced_stage(
     *,
+    contract: StageContract,
+    problem: ProblemInput,
+    stage_inputs: Dict[str, Dict[str, Any]],
     use_llm: bool,
     artifact_store: ArtifactStore,
     debug: bool,
-    worker_name: str,
-    artifact_name: str,
-    prompt: str,
-    required_keys: list[str],
-    fallback_builder,
+    skill_registry: SkillRegistry,
 ) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
     metadata = {
         "execution_mode": "rule-based",
@@ -103,35 +100,47 @@ def _run_llm_enhanced_worker(
         executor = ModelExecutor()
         try:
             llm_output, metadata = executor.execute(
-                worker_name=worker_name,
-                prompt=prompt,
-                required_keys=required_keys,
+                worker_name=contract.stage_name,
+                prompt=_build_stage_prompt(contract, skill_registry, problem, stage_inputs),
+                required_keys=contract.required_keys,
                 debug=debug,
             )
         except ModelExecutionTimeoutError as exc:
             if debug:
-                artifact_store.write_artifact(f"llm_debug_{worker_name}", exc.debug_trace)
+                artifact_store.write_artifact(f"llm_debug_{contract.stage_name}", exc.debug_trace)
             raise
+        except StopIteration:
+            llm_output, metadata = {}, {
+                "execution_mode": "fallback",
+                "model_name": "",
+                "validation_passed": False,
+            }
         if debug and metadata.get("debug_trace") is not None:
-            artifact_store.write_artifact(f"llm_debug_{worker_name}", metadata["debug_trace"])
+            artifact_store.write_artifact(f"llm_debug_{contract.stage_name}", metadata["debug_trace"])
         if metadata["execution_mode"] == "llm-assisted":
-            return llm_output, metadata, _generation_record(metadata, artifact_name)
+            return llm_output, metadata, _generation_record(metadata, contract.artifact_name)
 
-    fallback_payload = fallback_builder()
+    fallback_payload = contract.builder(problem, stage_inputs)
     fallback_mode = "fallback" if metadata["execution_mode"] == "fallback" else "rule-based"
     fallback_metadata = {
         "execution_mode": fallback_mode,
         "model_name": metadata.get("model_name", ""),
         "validation_passed": True,
     }
-    return fallback_payload, fallback_metadata, _generation_record(fallback_metadata, artifact_name)
+    return fallback_payload, fallback_metadata, _generation_record(fallback_metadata, contract.artifact_name)
 
 
-def _status_stage(task_index: int, simulation_ready: bool) -> str:
-    if not simulation_ready:
-        sequence = ["planning", "modeling", "pedagogy", "validation", "packaging"]
-        return sequence[task_index]
-    return STAGE_SEQUENCE[task_index]
+def _write_stage_output(
+    *,
+    artifact_store: ArtifactStore,
+    artifact_name: str,
+    payload: Dict[str, Any],
+) -> None:
+    artifact_store.write_artifact(artifact_name, payload)
+
+
+def _validation_artifact_name(stage_name: str) -> str:
+    return f"{stage_name}_validation"
 
 
 def run_problem_to_simulation_harness(
@@ -152,6 +161,8 @@ def run_problem_to_simulation_harness_for_run(
 ) -> Dict[str, Any]:
     artifact_store = ArtifactStore(run_dir)
     run_logger = RunLogger(run_dir)
+    skill_registry = SkillRegistry()
+    stage_contracts = build_stage_contracts()
 
     problem_request = {
         "text": problem.text,
@@ -165,324 +176,152 @@ def run_problem_to_simulation_harness_for_run(
     plan_payload = plan_problem_to_simulation(problem)
     _write_json(run_dir / "task_plan.json", plan_payload)
 
-    planner = plan_payload["planner"]
     task_plan = plan_payload["task_plan"]
     state_store = RunStateStore(run_dir, task_plan)
     if not (run_dir / "status.json").exists():
         state_store.initialize(run_id, stage="queued", status="queued")
-    generation_trace = []
+
     use_llm = problem.mode != "rule-based"
+    artifacts: Dict[str, Dict[str, Any]] = {}
+    stage_validations: Dict[str, Dict[str, Any]] = {}
+    generation_trace = []
 
     try:
-        state_store.mark_running(0, "planning")
-        run_logger.log(
-            run_id=run_id,
-            task_id="task-0",
-            task_type="planner",
-            input_digest="problem_request",
-            output_digest=f"simulation_ready={planner['simulation_ready']}, stage_type={planner['stage_type']}",
-            artifacts_written=["task_plan"],
-            status="completed",
-            next_task="problem_profile",
-        )
-        state_store.mark_step_result(
-            0,
-            status="completed",
-            artifacts_written=["task_plan"],
-            execution_mode="rule-based",
-            validation_passed=True,
-            next_stage="modeling",
-        )
+        for index, contract in enumerate(stage_contracts):
+            stage_inputs = {name: artifacts[name] for name in contract.input_artifacts if name in artifacts}
+            should_run = True
+            if contract.conditional and contract.should_run is not None:
+                should_run = contract.should_run(artifacts, problem)
 
-        state_store.mark_running(1, "modeling")
-        problem_profile, profile_meta, profile_trace = _run_llm_enhanced_worker(
-            use_llm=use_llm,
-            artifact_store=artifact_store,
-            debug=problem.debug,
-            worker_name="problem_profile",
-            artifact_name="problem_profile",
-            prompt=f"Extract a problem profile JSON from: {problem.text}",
-            required_keys=["summary", "research_object", "scenario", "stages"],
-            fallback_builder=lambda: build_problem_profile(problem, planner),
-        )
-        generation_trace.append(profile_trace)
-        artifact_store.write_artifact("problem_profile", problem_profile)
-        run_logger.log(
-            run_id=run_id,
-            task_id="task-1",
-            task_type="problem_profile",
-            input_digest=planner["stage_type"],
-            output_digest=f"research_object={problem_profile['research_object']}",
-            artifacts_written=["problem_profile"],
-            status="completed",
-            next_task="physics_model",
-        )
-        state_store.mark_step_result(
-            1,
-            status="completed",
-            artifacts_written=["problem_profile"],
-            execution_mode=profile_meta["execution_mode"],
-            model_name=profile_meta["model_name"],
-            validation_passed=profile_meta["validation_passed"],
-            next_stage="pedagogy",
-        )
+            state_store.mark_running(index, contract.stage_name)
 
-        state_store.mark_running(2, "pedagogy")
-        physics_model, model_meta, model_trace = _run_llm_enhanced_worker(
-            use_llm=use_llm,
-            artifact_store=artifact_store,
-            debug=problem.debug,
-            worker_name="physics_model",
-            artifact_name="physics_model",
-            prompt=f"Build a physics model JSON from profile: {json.dumps(problem_profile, ensure_ascii=False)}",
-            required_keys=["model_type", "research_object", "force_cases", "misconceptions"],
-            fallback_builder=lambda: build_physics_model(problem, problem_profile),
-        )
-        generation_trace.append(model_trace)
-        artifact_store.write_artifact("physics_model", physics_model)
-        run_logger.log(
-            run_id=run_id,
-            task_id="task-2",
-            task_type="physics_model",
-            input_digest=problem_profile["scenario"],
-            output_digest=f"force_cases={len(physics_model.get('force_cases', []))}",
-            artifacts_written=["physics_model"],
-            status="completed",
-            next_task="teaching_plan",
-        )
-        state_store.mark_step_result(
-            2,
-            status="completed",
-            artifacts_written=["physics_model"],
-            execution_mode=model_meta["execution_mode"],
-            model_name=model_meta["model_name"],
-            validation_passed=model_meta["validation_passed"],
-            next_stage="scene" if planner["simulation_ready"] else "validation",
-        )
+            if not should_run:
+                if contract.stage_name == "evidence_completion":
+                    skipped_payload = contract.builder(problem, stage_inputs)
+                    artifacts[contract.artifact_name] = skipped_payload
+                    validation_payload = ValidationResult(pass_=True, repairable=False, score=100).to_dict()
+                    stage_validations[contract.stage_name] = validation_payload
+                    _write_stage_output(
+                        artifact_store=artifact_store,
+                        artifact_name=contract.artifact_name,
+                        payload=skipped_payload,
+                    )
+                    artifact_store.write_artifact(_validation_artifact_name(contract.stage_name), validation_payload)
+                    run_logger.log(
+                        run_id=run_id,
+                        task_id=contract.id,
+                        task_type=contract.stage_name,
+                        input_digest="conditional-skip",
+                        output_digest="completion_status=skipped",
+                        artifacts_written=[contract.artifact_name, _validation_artifact_name(contract.stage_name)],
+                        status="skipped",
+                        next_task=stage_contracts[index + 1].stage_name if index + 1 < len(stage_contracts) else "",
+                    )
+                    state_store.mark_skipped(
+                        index,
+                        artifacts_written=[contract.artifact_name, _validation_artifact_name(contract.stage_name)],
+                        next_stage=stage_contracts[index + 1].stage_name if index + 1 < len(stage_contracts) else "completed",
+                    )
+                    continue
 
-        next_task_index = 3
-        teaching_plan, teaching_meta, teaching_trace = _run_llm_enhanced_worker(
-            use_llm=use_llm,
-            artifact_store=artifact_store,
-            debug=problem.debug,
-            worker_name="teaching_plan",
-            artifact_name="teaching_plan",
-            prompt=(
-                "Build a teaching plan JSON from the following profile and model: "
-                f"{json.dumps({'problem_profile': problem_profile, 'physics_model': physics_model}, ensure_ascii=False)}"
-            ),
-            required_keys=["classroom_use", "primary_goal", "observation_targets", "teacher_prompts"],
-            fallback_builder=lambda: build_teaching_plan(problem_profile, physics_model, planner),
-        )
-        generation_trace.append(teaching_trace)
-        artifact_store.write_artifact("teaching_plan", teaching_plan)
-        run_logger.log(
-            run_id=run_id,
-            task_id="task-3",
-            task_type="teaching_plan",
-            input_digest=physics_model["model_type"],
-            output_digest=f"classroom_use={teaching_plan['classroom_use']}",
-            artifacts_written=["teaching_plan"],
-            status="completed",
-            next_task="scene_spec" if planner["simulation_ready"] else "validation_report",
-        )
-        state_store.mark_step_result(
-            next_task_index,
-            status="completed",
-            artifacts_written=["teaching_plan"],
-            execution_mode=teaching_meta["execution_mode"],
-            model_name=teaching_meta["model_name"],
-            validation_passed=teaching_meta["validation_passed"],
-            next_stage="scene" if planner["simulation_ready"] else "validation",
-        )
+                run_logger.log(
+                    run_id=run_id,
+                    task_id=contract.id,
+                    task_type=contract.stage_name,
+                    input_digest="conditional-skip",
+                    output_digest="skipped",
+                    artifacts_written=[],
+                    status="skipped",
+                    next_task=stage_contracts[index + 1].stage_name if index + 1 < len(stage_contracts) else "",
+                )
+                state_store.mark_skipped(
+                    index,
+                    next_stage=stage_contracts[index + 1].stage_name if index + 1 < len(stage_contracts) else "completed",
+                )
+                continue
 
-        scene_spec: Optional[Dict[str, Any]] = None
-        simulation_spec: Optional[Dict[str, Any]] = None
-        simulation_blueprint: Optional[Dict[str, Any]] = None
-        renderer_payload: Optional[Dict[str, Any]] = None
-        delivery_bundle: Optional[Dict[str, Any]] = None
-        status_index = 4
+            payload, metadata, trace_entry = _run_llm_enhanced_stage(
+                contract=contract,
+                problem=problem,
+                stage_inputs=stage_inputs,
+                use_llm=use_llm,
+                artifact_store=artifact_store,
+                debug=problem.debug,
+                skill_registry=skill_registry,
+            )
+            validation = contract.validator(payload, artifacts | stage_inputs, problem)
+            attempt = 1
 
-        if planner["simulation_ready"]:
-            state_store.mark_running(status_index, "scene")
-            scene_spec = build_scene_spec(problem_profile, physics_model, teaching_plan)
-            artifact_store.write_artifact("scene_spec", scene_spec)
+            while not validation.pass_ and validation.repairable and contract.repairer is not None and attempt < contract.max_attempts:
+                payload = contract.repairer(payload, validation, artifacts | stage_inputs, problem)
+                validation = contract.validator(payload, artifacts | stage_inputs, problem)
+                attempt += 1
+
+            validation_payload = validation.to_dict()
+            stage_validations[contract.stage_name] = validation_payload
+            artifacts[contract.artifact_name] = payload
+            generation_trace.append(trace_entry)
+
+            _write_stage_output(
+                artifact_store=artifact_store,
+                artifact_name=contract.artifact_name,
+                payload=payload,
+            )
+            artifact_store.write_artifact(_validation_artifact_name(contract.stage_name), validation_payload)
+
+            artifacts_written = [contract.artifact_name, _validation_artifact_name(contract.stage_name)]
             run_logger.log(
                 run_id=run_id,
-                task_id="task-4",
-                task_type="scene_spec",
-                input_digest=teaching_plan["primary_goal"],
-                output_digest=f"template_id={scene_spec['template_id']}",
-                artifacts_written=["scene_spec"],
-                status="completed",
-                next_task="simulation_spec",
+                task_id=contract.id,
+                task_type=contract.stage_name,
+                input_digest=",".join(contract.input_artifacts) or "problem_request",
+                output_digest=f"score={validation.score}",
+                artifacts_written=artifacts_written,
+                status="completed" if validation.pass_ else "failed",
+                next_task=stage_contracts[index + 1].stage_name if index + 1 < len(stage_contracts) else "",
             )
             state_store.mark_step_result(
-                status_index,
-                status="completed",
-                artifacts_written=["scene_spec"],
-                next_stage="simulation",
+                index,
+                status="completed" if validation.pass_ else "failed",
+                artifacts_written=artifacts_written,
+                execution_mode=metadata["execution_mode"],
+                model_name=metadata["model_name"],
+                validation_passed=validation.pass_,
+                next_stage=stage_contracts[index + 1].stage_name if index + 1 < len(stage_contracts) else "completed",
             )
-            status_index += 1
 
-            state_store.mark_running(status_index, "simulation")
-            simulation_spec = build_simulation_spec(scene_spec, teaching_plan)
-            artifact_store.write_artifact("simulation_spec", simulation_spec)
-            run_logger.log(
-                run_id=run_id,
-                task_id="task-5",
-                task_type="simulation_spec",
-                input_digest=scene_spec["template_id"],
-                output_digest=f"renderer_mode={simulation_spec['renderer_mode']}",
-                artifacts_written=["simulation_spec"],
-                status="completed",
-                next_task="simulation_blueprint",
-            )
-            state_store.mark_step_result(
-                status_index,
-                status="completed",
-                artifacts_written=["simulation_spec"],
-                next_stage="simulation",
-            )
-            status_index += 1
+            if not validation.pass_:
+                raise ValueError(
+                    f"Stage `{contract.stage_name}` failed validation: {validation.repair_hint or 'unknown validation error'}"
+                )
 
-            state_store.mark_running(status_index, "simulation")
-            simulation_blueprint = build_simulation_blueprint(
-                planner, problem_profile, physics_model, scene_spec, simulation_spec
-            )
-            artifact_store.write_artifact("simulation_blueprint", simulation_blueprint)
-            run_logger.log(
-                run_id=run_id,
-                task_id="task-6",
-                task_type="simulation_blueprint",
-                input_digest=simulation_spec["renderer_mode"],
-                output_digest=f"delivery_mode={simulation_blueprint['delivery_mode']}",
-                artifacts_written=["simulation_blueprint"],
-                status="completed",
-                next_task="renderer_payload",
-            )
-            state_store.mark_step_result(
-                status_index,
-                status="completed",
-                artifacts_written=["simulation_blueprint"],
-                next_stage="simulation",
-            )
-            status_index += 1
+        artifact_store.write_artifact("generation_trace", {"entries": generation_trace})
 
-            state_store.mark_running(status_index, "simulation")
-            renderer_payload = build_renderer_payload(planner, scene_spec, simulation_spec, teaching_plan)
-            artifact_store.write_artifact("renderer_payload", renderer_payload)
-            run_logger.log(
-                run_id=run_id,
-                task_id="task-7",
-                task_type="renderer_payload",
-                input_digest=scene_spec["template_id"],
-                output_digest=f"component_key={renderer_payload['component_key']}",
-                artifacts_written=["renderer_payload"],
-                status="completed",
-                next_task="delivery_bundle",
-            )
-            state_store.mark_step_result(
-                status_index,
-                status="completed",
-                artifacts_written=["renderer_payload"],
-                next_stage="validation",
-            )
-            status_index += 1
-
-            state_store.mark_running(status_index, "validation")
-            delivery_bundle = build_delivery_bundle(simulation_blueprint, renderer_payload, teaching_plan)
-            artifact_store.write_artifact("delivery_bundle", delivery_bundle)
-            run_logger.log(
-                run_id=run_id,
-                task_id="task-8",
-                task_type="delivery_bundle",
-                input_digest=renderer_payload["component_key"],
-                output_digest=f"primary_view={delivery_bundle['primary_view']}",
-                artifacts_written=["delivery_bundle"],
-                status="completed",
-                next_task="validation_report",
-            )
-            state_store.mark_step_result(
-                status_index,
-                status="completed",
-                artifacts_written=["delivery_bundle"],
-                next_stage="validation",
-            )
-            status_index += 1
-
-        state_store.mark_running(status_index, "validation")
-        validation_report = build_validation_report(
-            planner=planner,
-            problem_profile=problem_profile,
-            physics_model=physics_model,
-            teaching_plan=teaching_plan,
-            scene_spec=scene_spec,
-            simulation_spec=simulation_spec,
-        )
-        validation_report["generation_trace"] = generation_trace
-        validation_report["export_ready"] = bool(
-            planner["simulation_ready"] and validation_report["ready_for_delivery"]
-        )
-        artifact_store.write_artifact("validation_report", validation_report)
-        run_logger.log(
-            run_id=run_id,
-            task_id="task-9" if planner["simulation_ready"] else "task-4",
-            task_type="validation_report",
-            input_digest=planner["stage_type"],
-            output_digest=f"ready={validation_report['ready_for_delivery']}",
-            artifacts_written=["validation_report"],
-            status="completed",
-            next_task="teaching_simulation_package" if planner["simulation_ready"] else "teaching_analysis_package",
-        )
-        state_store.mark_step_result(
-            status_index,
-            status="completed",
-            artifacts_written=["validation_report"],
-            next_stage="packaging",
-        )
-        status_index += 1
-
-        if delivery_bundle is not None:
-            delivery_bundle["exportable"] = validation_report["export_ready"]
-            delivery_bundle["export_mode"] = "single-file-html"
-            delivery_bundle["export_includes"] = [
-                "scene_spec",
-                "simulation_spec",
-                "renderer_payload",
-                "delivery_bundle",
-            ]
-            artifact_store.write_artifact("delivery_bundle", delivery_bundle)
-
-        final_key = "teaching_simulation_package" if planner["simulation_ready"] else "teaching_analysis_package"
         final_package = {
             "run_id": run_id,
-            "planner": planner,
             "task_plan": task_plan,
-            "problem_profile": problem_profile,
-            "physics_model": physics_model,
-            "teaching_plan": teaching_plan,
-            "scene_spec": scene_spec,
-            "simulation_spec": simulation_spec,
-            "simulation_blueprint": simulation_blueprint,
-            "renderer_payload": renderer_payload,
-            "delivery_bundle": delivery_bundle,
-            "validation_report": validation_report,
+            "stage_graph": [task["type"] for task in task_plan["tasks"]],
+            "artifacts": artifacts,
+            "stage_validations": stage_validations,
+            "generation_trace": generation_trace,
+            "run_profiling": artifacts.get("run_profiling"),
+            "evidence_completion": artifacts.get("evidence_completion"),
+            "knowledge_grounding": artifacts.get("knowledge_grounding"),
+            "structured_task_model": artifacts.get("structured_task_model"),
+            "instructional_design_brief": artifacts.get("instructional_design_brief"),
+            "physics_model": artifacts.get("physics_model"),
+            "representation_interaction_design": artifacts.get("representation_interaction_design"),
+            "experience_mode_adaptation": artifacts.get("experience_mode_adaptation"),
+            "simulation_spec_generation": artifacts.get("simulation_spec_generation"),
+            "final_validation": artifacts.get("final_validation"),
+            "compile_delivery": artifacts.get("compile_delivery"),
             "task_log": run_logger.events,
         }
-        artifact_store.write_artifact(final_key, final_package)
+        artifact_store.write_artifact("teaching_simulation_package", final_package)
         _write_json(run_dir / "final_package.json", final_package)
-
-        state_store.mark_running(status_index, "packaging")
-        state_store.mark_step_result(
-            status_index,
-            status="completed",
-            artifacts_written=[final_key],
-            next_stage="completed",
-        )
         state_store.mark_completed()
         return final_package
-    except Exception as exc:  # pragma: no cover - failure path is stateful
+    except Exception as exc:  # pragma: no cover
         with _RUN_LOCK:
             state_store = RunStateStore(run_dir, task_plan)
             try:
@@ -599,21 +438,21 @@ def list_recent_runs(*, runs_root: Optional[Path] = None, limit: int = 12) -> Di
             final_path = run_dir / "final_package.json"
             if final_path.exists():
                 final_package = json.loads(final_path.read_text(encoding="utf-8"))
-            planner = final_package.get("planner", {})
-            problem_profile = final_package.get("problem_profile", {})
-            validation_report = final_package.get("validation_report", {})
+            run_profiling = final_package.get("run_profiling", {})
+            structured_task_model = final_package.get("structured_task_model", {})
+            final_validation = final_package.get("final_validation", {})
             items.append(
                 {
                     "run_id": status["run_id"],
-                    "title": problem_profile.get("summary")
-                    or problem_profile.get("scenario")
-                    or status["run_id"],
+                    "title": structured_task_model.get("summary")
+                    or structured_task_model.get("scenario")
+                    or run_dir.name,
                     "status": status["status"],
                     "updated_at": status.get("updated_at"),
-                    "problem_family": planner.get("problem_family", ""),
-                    "model_family": planner.get("model_family", ""),
-                    "simulation_mode": planner.get("simulation_mode", ""),
-                    "export_ready": bool(validation_report.get("export_ready")),
+                    "input_profile": run_profiling.get("input_profile", ""),
+                    "experience_mode": run_profiling.get("experience_mode", ""),
+                    "score": final_validation.get("score", 0),
+                    "export_ready": bool(final_validation.get("export_ready")),
                 }
             )
     items.sort(key=lambda item: item.get("updated_at") or "", reverse=True)

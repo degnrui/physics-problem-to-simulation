@@ -13,7 +13,7 @@ class RunStateStore:
         self.run_dir = run_dir
         self.status_path = run_dir / "status.json"
         self.task_plan = task_plan
-        task_steps = [
+        self.steps: List[Dict[str, Any]] = [
             {
                 "id": task["id"],
                 "label": task["type"],
@@ -25,19 +25,6 @@ class RunStateStore:
                 "validation_passed": True,
             }
             for task in task_plan["tasks"]
-        ]
-        self.steps: List[Dict[str, Any]] = [
-            {
-                "id": "task-0",
-                "label": "planner",
-                "status": "pending",
-                "artifacts_written": [],
-                "error": "",
-                "execution_mode": "rule-based",
-                "model_name": "",
-                "validation_passed": True,
-            },
-            *task_steps,
         ]
 
     def initialize(self, run_id: str, stage: str = "queued", status: str = "queued") -> Dict[str, Any]:
@@ -99,6 +86,28 @@ class RunStateStore:
         if next_stage:
             payload["current_stage"] = next_stage
         completed_steps = sum(1 for item in payload["steps"] if item["status"] == "completed")
+        payload["percent"] = int((completed_steps / max(payload["total_steps"], 1)) * 100)
+        self._write(payload)
+        return payload
+
+    def mark_skipped(
+        self,
+        step_index: int,
+        *,
+        artifacts_written: Optional[List[str]] = None,
+        next_stage: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        payload = self.read()
+        step = payload["steps"][step_index]
+        step["status"] = "skipped"
+        step["artifacts_written"] = artifacts_written or []
+        step["updated_at"] = utc_now_iso()
+        payload["updated_at"] = utc_now_iso()
+        if next_stage:
+            payload["current_stage"] = next_stage
+        completed_steps = sum(
+            1 for item in payload["steps"] if item["status"] in {"completed", "skipped"}
+        )
         payload["percent"] = int((completed_steps / max(payload["total_steps"], 1)) * 100)
         self._write(payload)
         return payload

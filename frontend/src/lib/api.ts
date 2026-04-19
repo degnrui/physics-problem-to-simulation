@@ -34,17 +34,22 @@ export interface RunStatusResponse {
 
 export interface RunResultResponse {
   run_id: string;
-  planner: Record<string, unknown>;
   task_plan: Record<string, unknown>;
-  problem_profile: Record<string, unknown>;
+  stage_graph: string[];
+  artifacts: Record<string, Record<string, unknown>>;
+  stage_validations: Record<string, Record<string, unknown>>;
+  generation_trace: Array<Record<string, unknown>>;
+  run_profiling: Record<string, unknown>;
+  evidence_completion: Record<string, unknown> | null;
+  knowledge_grounding: Record<string, unknown>;
+  structured_task_model: Record<string, unknown>;
+  instructional_design_brief: Record<string, unknown>;
   physics_model: Record<string, unknown>;
-  teaching_plan: Record<string, unknown>;
-  scene_spec: Record<string, unknown> | null;
-  simulation_spec: Record<string, unknown> | null;
-  simulation_blueprint: Record<string, unknown> | null;
-  renderer_payload: Record<string, unknown> | null;
-  delivery_bundle: Record<string, unknown> | null;
-  validation_report: Record<string, unknown>;
+  representation_interaction_design: Record<string, unknown>;
+  experience_mode_adaptation: Record<string, unknown>;
+  simulation_spec_generation: Record<string, unknown>;
+  final_validation: Record<string, unknown>;
+  compile_delivery: Record<string, unknown> | null;
   task_log: Array<Record<string, unknown>>;
 }
 
@@ -60,9 +65,9 @@ export interface RunListItem {
   title: string;
   status: string;
   updated_at: string | null;
-  problem_family: string;
-  model_family: string;
-  simulation_mode: string;
+  input_profile: string;
+  experience_mode: string;
+  score: number;
   export_ready: boolean;
 }
 

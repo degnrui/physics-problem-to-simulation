@@ -4,12 +4,14 @@ from typing import Any, Dict
 
 
 def render_export_html(final_package: Dict[str, Any]) -> str:
+    compile_delivery = final_package.get("compile_delivery", {})
     payload = {
-        "scene_spec": final_package.get("scene_spec"),
-        "simulation_spec": final_package.get("simulation_spec"),
-        "renderer_payload": final_package.get("renderer_payload"),
-        "delivery_bundle": final_package.get("delivery_bundle"),
-        "validation_report": final_package.get("validation_report"),
+        "run_profiling": final_package.get("run_profiling"),
+        "structured_task_model": final_package.get("structured_task_model"),
+        "physics_model": final_package.get("physics_model"),
+        "simulation_spec_generation": final_package.get("simulation_spec_generation"),
+        "compile_delivery": compile_delivery,
+        "final_validation": final_package.get("final_validation"),
     }
     boot = json.dumps(payload, ensure_ascii=False)
     title = "Physics Problem to Simulation Export"
@@ -79,10 +81,14 @@ def render_export_html(final_package: Dict[str, Any]) -> str:
     </div>
     <script>
       const data = {boot};
-      const rendererPayload = data.renderer_payload || {{}};
-      const deliveryBundle = data.delivery_bundle || {{}};
-      const simulationSpec = data.simulation_spec || {{}};
-      const sceneSpec = data.scene_spec || {{}};
+      const compileDelivery = data.compile_delivery || {{}};
+      const rendererPayload = compileDelivery.renderer_payload || {{}};
+      const deliveryBundle = compileDelivery.delivery_bundle || {{}};
+      const simulationBlueprint = compileDelivery.simulation_blueprint || {{}};
+      const specGeneration = data.simulation_spec_generation || {{}};
+      const simulationSpec = specGeneration.simulation_spec || {{}};
+      const sceneSpec = specGeneration.scene_spec || {{}};
+      const finalValidation = data.final_validation || {{}};
       document.getElementById("subtitle").textContent =
         (rendererPayload.hero_panel && rendererPayload.hero_panel.subtitle) ||
         "把物理题转成可讲授、可演示、可验证的教学 simulation 成品。";
@@ -91,8 +97,9 @@ def render_export_html(final_package: Dict[str, Any]) -> str:
       const cards = [
         ["Scene", sceneSpec.scene_type || "unknown"],
         ["Template", simulationSpec.template_id || sceneSpec.template_id || "unknown"],
-        ["Renderer", simulationSpec.renderer_mode || "unknown"],
+        ["Renderer", rendererPayload.component_key || simulationSpec.renderer_mode || "unknown"],
         ["Export", (deliveryBundle.export_mode || "single-file-html")],
+        ["Score", String(finalValidation.score || "--")],
       ];
       document.getElementById("summaryCards").innerHTML = cards
         .map(([label, value]) => `<div class="card"><strong>${{label}}</strong><p>${{value}}</p></div>`)
@@ -106,7 +113,17 @@ def render_export_html(final_package: Dict[str, Any]) -> str:
       document.getElementById("observationTargets").innerHTML = (deliveryBundle.observation_targets || [])
         .map((item) => `<li>${{item}}</li>`)
         .join("");
-      document.getElementById("payload").textContent = JSON.stringify(data, null, 2);
+      document.getElementById("payload").textContent = JSON.stringify(
+        {{
+          simulationBlueprint,
+          sceneSpec,
+          simulationSpec,
+          finalValidation,
+          raw: data,
+        }},
+        null,
+        2,
+      );
     </script>
   </body>
 </html>

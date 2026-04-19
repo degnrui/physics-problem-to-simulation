@@ -179,7 +179,7 @@ export default function App() {
     }
 
     return conversations.filter((conversation) =>
-      [conversation.title, conversation.modelFamily, conversation.simulationMode]
+      [conversation.title, conversation.inputProfile, conversation.experienceMode]
         .join(" ")
         .toLowerCase()
         .includes(needle),
@@ -197,8 +197,8 @@ export default function App() {
         title: `会话 ${route.runId}`,
         status: statusMap[route.runId]?.status ?? "running",
         updatedAt: statusMap[route.runId]?.updated_at ?? null,
-        modelFamily: "Simulation",
-        simulationMode: "interactive",
+        inputProfile: "unknown",
+        experienceMode: "hybrid",
       }
     );
   }, [conversations, route, statusMap]);

@@ -17,7 +17,6 @@ from app.harness.orchestrator import (
     read_run_status,
     run_problem_to_simulation_harness,
 )
-from app.pipeline.problem_to_simulation import run_problem_to_simulation
 
 router = APIRouter()
 
@@ -28,8 +27,7 @@ def _runs_root(request: Request) -> Optional[Path]:
 
 @router.post("/problem-to-simulation")
 def problem_to_simulation(payload: ProblemInput) -> dict:
-    result = run_problem_to_simulation(payload)
-    return result.model_dump()
+    return run_problem_to_simulation_harness(payload, runs_root=None)
 
 
 @router.post("/problem-to-simulation/plan")
@@ -90,7 +88,7 @@ def create_run_export(run_id: str, request: Request) -> dict:
     if status["status"] != "completed":
         raise HTTPException(status_code=409, detail="Run is not completed")
     result = read_run_result(run_id, runs_root=_runs_root(request))
-    if not result["validation_report"].get("export_ready"):
+    if not result["final_validation"].get("export_ready"):
         raise HTTPException(status_code=409, detail="Run is not exportable")
     return export_run_html(run_id, runs_root=_runs_root(request))
 

@@ -17,46 +17,101 @@ const HIDDEN_RUN_IDS_STORAGE_KEY = "simulation-studio-hidden-runs";
 
 const STAGE_LIBRARY: StagePresentation[] = [
   {
-    id: "summary",
-    title: "提炼教学任务",
-    description: "系统正在压缩题意，提取课堂目标与学生要观察的变化。",
-    detail: "让后续 simulation 先对准“要讲什么”，再决定怎么演示。",
+    id: "run_profiling",
+    title: "识别输入状态",
+    description: "系统正在判断题目资料充分度、教学模式和是否需要补全证据。",
+    detail: "这一步决定后面走直接 grounding，还是先补资料。",
     glyph: "题",
-    progressLabel: "需求摘要",
+    progressLabel: "run_profiling",
   },
   {
-    id: "model",
+    id: "evidence_completion",
+    title: "补全缺失证据",
+    description: "系统正在补最小必需上下文，避免后续建立在缺信息上。",
+    detail: "当前版本优先做最小补全，不会在这一步过度展开教学设计。",
+    glyph: "证",
+    progressLabel: "evidence_completion",
+  },
+  {
+    id: "knowledge_grounding",
+    title: "建立知识基准",
+    description: "系统正在确认概念边界、假设条件和可信解题基准。",
+    detail: "这一步决定后面的模型与可视化是否站得住。",
+    glyph: "基",
+    progressLabel: "knowledge_grounding",
+  },
+  {
+    id: "structured_task_model",
+    title: "结构化任务模型",
+    description: "系统正在整理研究对象、已知条件、未知量、约束和阶段。",
+    detail: "先把题目压成稳定工件，再继续做教学与仿真设计。",
+    glyph: "构",
+    progressLabel: "structured_task_model",
+  },
+  {
+    id: "instructional_design_brief",
+    title: "组织教学动作",
+    description: "系统正在把知识点转成课堂讲评顺序、观察证据和互动动作。",
+    detail: "先回答教学问题，再决定 simulation 怎么呈现。",
+    glyph: "教",
+    progressLabel: "instructional_design_brief",
+  },
+  {
+    id: "physics_model",
     title: "建立物理模型",
     description: "系统正在确定受力关系、运动状态与关键物理量。",
     detail: "这一步决定 simulation 是否科学、是否能承载后续修改。",
     glyph: "模",
-    progressLabel: "物理模型",
+    progressLabel: "physics_model",
   },
   {
-    id: "teaching",
-    title: "组织教学动作",
-    description: "系统正在把知识点转成课堂讲评顺序与观察动作。",
-    detail: "先讲什么、后看什么，会直接影响 runtime 的控制与提示逻辑。",
-    glyph: "教",
-    progressLabel: "教学动作",
+    id: "representation_interaction_design",
+    title: "编排可视证据",
+    description: "系统正在决定哪些量要看见、怎么比较、哪些控件需要开放。",
+    detail: "目标不是堆控件，而是让教学证据真正可见。",
+    glyph: "视",
+    progressLabel: "representation_interaction_design",
   },
   {
-    id: "layout",
-    title: "编排展示内容",
-    description: "系统正在组织标题、说明、控件与反馈层的空间关系。",
-    detail: "目标不是做网页，而是生成可讲授、可验证的实验工作台。",
+    id: "experience_mode_adaptation",
+    title: "适配使用场景",
+    description: "系统正在按 teacher demo 或 student exploration 调整控件和节奏。",
+    detail: "同一物理过程，在课堂投影和学生探索里的交互策略并不一样。",
     glyph: "页",
-    progressLabel: "页面内容",
+    progressLabel: "experience_mode_adaptation",
   },
   {
-    id: "compile",
+    id: "simulation_spec_generation",
+    title: "生成运行规格",
+    description: "系统正在把场景、交互和物理关系压成可编译的 simulation spec。",
+    detail: "这一步的输出要能被后面的 deterministic compiler 稳定消费。",
+    glyph: "规",
+    progressLabel: "simulation_spec_generation",
+  },
+  {
+    id: "final_validation",
+    title: "总门禁校验",
+    description: "系统正在检查 physics fidelity、教学有效性、证据可见性和可执行性。",
+    detail: "如果这里不过，不会进入 compile。",
+    glyph: "验",
+    progressLabel: "final_validation",
+  },
+  {
+    id: "compile_delivery",
     title: "编译 simulation",
     description: "系统正在把内容、交互和物理关系合成为可运行的产物。",
     detail: "生成完成后会自动进入结果工作台，并打开 runtime 预览。",
     glyph: "译",
-    progressLabel: "编译 simulation",
+    progressLabel: "compile_delivery",
   },
 ];
+
+const STAGE_LOOKUP = new Map(
+  STAGE_LIBRARY.flatMap((stage) => [
+    [stage.id, stage],
+    [stage.progressLabel, stage],
+  ]),
+);
 
 const DEFAULT_UI_STATE: ConversationUiState = {
   previewOpen: false,
@@ -146,11 +201,16 @@ export function getStagePresentation(status: RunStatusResponse | null): StagePre
     return STAGE_LIBRARY[0];
   }
 
-  const currentStep = status.steps[status.current_step_index] ?? status.steps.find((step) => step.status === "running");
+  const runningStep = status.steps.find((step) => step.status === "running");
+  const zeroBasedIndex = Math.max(0, Math.min((status.current_step_index || 1) - 1, status.steps.length - 1));
+  const currentStep = runningStep ?? status.steps[zeroBasedIndex];
   const label = currentStep?.label ?? status.current_stage;
-  const matching = STAGE_LIBRARY.find((item) => label?.includes(item.progressLabel) || label?.includes(item.title.slice(0, 2)));
+  const matching =
+    STAGE_LOOKUP.get(label ?? "") ??
+    STAGE_LOOKUP.get(status.current_stage) ??
+    STAGE_LIBRARY.find((item) => label?.includes(item.title.slice(0, 2)));
 
-  return matching ?? STAGE_LIBRARY[Math.min(status.current_step_index, STAGE_LIBRARY.length - 1)] ?? STAGE_LIBRARY[0];
+  return matching ?? STAGE_LIBRARY[Math.min(zeroBasedIndex, STAGE_LIBRARY.length - 1)] ?? STAGE_LIBRARY[0];
 }
 
 export function buildConversationSummary(item: RunListItem): ConversationSummary {
@@ -159,8 +219,8 @@ export function buildConversationSummary(item: RunListItem): ConversationSummary
     title: item.title,
     status: item.status,
     updatedAt: item.updated_at,
-    modelFamily: item.model_family,
-    simulationMode: item.simulation_mode,
+    inputProfile: item.input_profile,
+    experienceMode: item.experience_mode,
   };
 }
 
@@ -168,37 +228,44 @@ export function buildRuntimeDocument(
   result: RunResultResponse | null,
   summary: ConversationSummary | null,
 ): RuntimeDocument {
-  const deliveryBundle = (result?.delivery_bundle ?? {}) as Record<string, unknown>;
-  const validationReport = (result?.validation_report ?? {}) as Record<string, unknown>;
-  const teachingPlan = (result?.teaching_plan ?? {}) as Record<string, unknown>;
-  const problemProfile = (result?.problem_profile ?? {}) as Record<string, unknown>;
+  const compileDelivery = (result?.compile_delivery ?? {}) as Record<string, unknown>;
+  const deliveryBundle = (compileDelivery.delivery_bundle ?? {}) as Record<string, unknown>;
+  const rendererPayload = (compileDelivery.renderer_payload ?? {}) as Record<string, unknown>;
+  const finalValidation = (result?.final_validation ?? {}) as Record<string, unknown>;
+  const teachingPlan = (result?.instructional_design_brief ?? {}) as Record<string, unknown>;
+  const taskModel = (result?.structured_task_model ?? {}) as Record<string, unknown>;
   const physicsModel = (result?.physics_model ?? {}) as Record<string, unknown>;
-  const sceneSpec = (result?.scene_spec ?? {}) as Record<string, unknown>;
+  const specGeneration = (result?.simulation_spec_generation ?? {}) as Record<string, unknown>;
+  const sceneSpec = (specGeneration.scene_spec ?? {}) as Record<string, unknown>;
 
   const teacherScript = normalizeArray(deliveryBundle.teacher_script);
   const observationTargets = normalizeArray(deliveryBundle.observation_targets);
   const objective =
-    String(teachingPlan.objective ?? teachingPlan.goal ?? "围绕关键物理关系组织一个可讲授、可操作的课堂演示。");
+    String(teachingPlan.teaching_goal ?? "围绕关键物理关系组织一个可讲授、可操作的课堂演示。");
 
-  const equationEntry = Object.entries(physicsModel).find(([, value]) => typeof value === "string");
-  const equation = equationEntry ? `${equationEntry[0]}：${String(equationEntry[1])}` : "关键关系：观察位移变化、回复趋势与能量损耗。";
+  const relations = normalizeArray(physicsModel.relations);
+  const equation = relations[0] ?? "关键关系：观察可见证据与公式之间的对应。";
 
   return {
     title:
-      String(problemProfile.summary ?? summary?.title ?? "新的 simulation 工作台"),
+      String(taskModel.summary ?? summary?.title ?? "新的 simulation 工作台"),
     subtitle:
-      String(
-        teachingPlan.positioning ??
-          teachingPlan.objective ??
-          "从题意出发，逐步验证物理关系、课堂节奏与交互表达。",
-      ),
+      typeof rendererPayload.hero_panel === "object" && rendererPayload.hero_panel !== null
+        ? String(
+            (rendererPayload.hero_panel as Record<string, unknown>).subtitle ??
+              teachingPlan.teaching_goal ??
+              "从题意出发，逐步验证物理关系、课堂节奏与交互表达。",
+          )
+        : String(
+            teachingPlan.teaching_goal ?? "从题意出发，逐步验证物理关系、课堂节奏与交互表达。",
+          ),
     objective,
     focusArea:
       observationTargets[0] ??
-      String(sceneSpec.scene_type ?? summary?.modelFamily ?? "控制关键量并观察物理量变化"),
+      String(sceneSpec.scene_type ?? summary?.experienceMode ?? "控制关键量并观察物理量变化"),
     motionHint:
       String(
-        teachingPlan.key_action ??
+        teachingPlan.interaction_strategy ??
           "拖动参数、观察回复趋势，并用图形和语言解释变化原因。",
       ),
     insight:
@@ -207,7 +274,7 @@ export function buildRuntimeDocument(
     equation,
     callout:
       String(
-        validationReport.ready_for_delivery
+        finalValidation.ready_for_delivery
           ? "当前版本已具备课堂展示条件，可继续打磨局部表达。"
           : "先完成逻辑与展示验证，再导出成最终课堂材料。",
       ),

@@ -20,10 +20,7 @@ from app.harness.model_executor import (
     ModelExecutor,
     REQUEST_TIMEOUT_SECONDS,
 )
-from app.harness.orchestrator import (
-    plan_problem_to_simulation,
-    run_problem_to_simulation_harness,
-)
+from app.harness.orchestrator import plan_problem_to_simulation, run_problem_to_simulation_harness
 
 
 CAT_STAGE_PROBLEM = (
@@ -52,37 +49,53 @@ GENERIC_TRANSITION_PROBLEM = (
     "请比较篮球在飞行阶段和碰板阶段的受力情况，并说明哪些力发生了变化。"
 )
 
+PENDULUM_PROBLEM = (
+    "如图所示,不可伸长的光滑细线穿过质量为 0.1kg 的小铁球,两端 A、B 悬挂在倾角为 30°的固定斜杆上,间距为 1.5m。"
+    "小球平衡时,A 端细线与杆垂直;当小球受到垂直纸面方向的扰动做微小摆动时,等效于悬挂点位于小球重垂线与 AB 交点的单摆,"
+    "重力加速度g = 10m/s^{2},则(   )"
+    "A. 摆角变小,周期变大 "
+    "B. 小球摆动周期约为 2s "
+    "C. 小球平衡时,A 端拉力为sqrt(3)/2 N "
+    "D. 小球平衡时,A 端拉力小于 B 端拉力 "
+    "答案：B "
+    "解析：根据单摆的周期公式 T=2pi sqrt(l/g) 可知周期与摆角无关；"
+    "摆长为 1 m，周期约为 2 s；同一根绳中两端张力相等。"
+)
+
 
 class HarnessOrchestratorTests(unittest.TestCase):
-    def test_plan_builds_simulation_route_for_staged_force_problem(self) -> None:
+    def test_plan_uses_stage_runtime_without_legacy_model_routing(self) -> None:
         result = plan_problem_to_simulation(
             ProblemInput(text=CAT_STAGE_PROBLEM, topic_hint="force-analysis")
         )
 
-        self.assertTrue(result["planner"]["simulation_ready"])
-        self.assertEqual(result["planner"]["stage_type"], "cat-jump")
-        self.assertEqual(result["task_plan"]["tasks"][0]["type"], "problem_profile")
-        self.assertEqual(result["task_plan"]["tasks"][-1]["type"], "teaching_simulation_package")
+        self.assertNotIn("planner", result)
+        self.assertIn("run_profiling", result)
+        self.assertNotIn("problem_family", result["run_profiling"])
+        self.assertNotIn("model_family", result["run_profiling"])
+        self.assertNotIn("simulation_mode", result["run_profiling"])
+        self.assertEqual(result["task_plan"]["tasks"][0]["type"], "run_profiling")
+        self.assertEqual(result["task_plan"]["tasks"][-1]["type"], "compile_delivery")
+        self.assertEqual(result["stage_graph"][3], "structured_task_model")
 
-    def test_plan_builds_simulation_route_for_generic_contact_transition_problem(self) -> None:
+    def test_plan_builds_stage_graph_for_generic_contact_transition_problem(self) -> None:
         result = plan_problem_to_simulation(
             ProblemInput(text=GENERIC_TRANSITION_PROBLEM, topic_hint="force-analysis")
         )
 
-        self.assertTrue(result["planner"]["simulation_ready"])
-        self.assertEqual(result["planner"]["problem_family"], "force-analysis")
-        self.assertEqual(result["planner"]["stage_type"], "contact-impact")
+        self.assertEqual(result["run_profiling"]["input_profile"], "problem_only")
+        self.assertIn("knowledge_grounding", result["stage_graph"])
+        self.assertIn("final_validation", result["stage_graph"])
 
-    def test_plan_builds_analysis_only_route_for_modeling_problem(self) -> None:
+    def test_plan_builds_stage_graph_for_modeling_problem_without_analysis_route_alias(self) -> None:
         result = plan_problem_to_simulation(
             ProblemInput(text=MODELING_PROBLEM, topic_hint="force-analysis")
         )
 
-        self.assertFalse(result["planner"]["simulation_ready"])
-        self.assertEqual(result["planner"]["stage_type"], "modeling-judgement")
-        self.assertEqual(result["task_plan"]["tasks"][-1]["type"], "teaching_analysis_package")
+        self.assertEqual(result["task_plan"]["tasks"][-1]["type"], "compile_delivery")
+        self.assertTrue(result["task_plan"]["tasks"][-1]["conditional"])
 
-    def test_run_writes_artifacts_and_final_package(self) -> None:
+    def test_run_writes_new_stage_artifacts_and_final_package(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             result = run_problem_to_simulation_harness(
                 ProblemInput(text=CAT_STAGE_PROBLEM, topic_hint="force-analysis"),
@@ -92,24 +105,26 @@ class HarnessOrchestratorTests(unittest.TestCase):
             run_dir = Path(temp_dir) / result["run_id"]
             self.assertTrue((run_dir / "task_plan.json").exists())
             self.assertTrue((run_dir / "task_log.ndjson").exists())
-            self.assertTrue((run_dir / "artifacts" / "problem_profile.json").exists())
+            self.assertTrue((run_dir / "artifacts" / "run_profiling.json").exists())
+            self.assertTrue((run_dir / "artifacts" / "knowledge_grounding.json").exists())
+            self.assertTrue((run_dir / "artifacts" / "structured_task_model.json").exists())
+            self.assertTrue((run_dir / "artifacts" / "instructional_design_brief.json").exists())
             self.assertTrue((run_dir / "artifacts" / "physics_model.json").exists())
-            self.assertTrue((run_dir / "artifacts" / "teaching_plan.json").exists())
-            self.assertTrue((run_dir / "artifacts" / "scene_spec.json").exists())
-            self.assertTrue((run_dir / "artifacts" / "simulation_spec.json").exists())
-            self.assertTrue((run_dir / "artifacts" / "simulation_blueprint.json").exists())
-            self.assertTrue((run_dir / "artifacts" / "renderer_payload.json").exists())
-            self.assertTrue((run_dir / "artifacts" / "delivery_bundle.json").exists())
-            self.assertTrue((run_dir / "artifacts" / "validation_report.json").exists())
+            self.assertTrue((run_dir / "artifacts" / "representation_interaction_design.json").exists())
+            self.assertTrue((run_dir / "artifacts" / "experience_mode_adaptation.json").exists())
+            self.assertTrue((run_dir / "artifacts" / "simulation_spec_generation.json").exists())
+            self.assertTrue((run_dir / "artifacts" / "final_validation.json").exists())
+            self.assertTrue((run_dir / "artifacts" / "compile_delivery.json").exists())
             self.assertTrue((run_dir / "final_package.json").exists())
-            self.assertEqual(result["validation_report"]["route"], "simulation")
             self.assertGreaterEqual(len(result["task_log"]), 9)
 
             final_package = json.loads((run_dir / "final_package.json").read_text(encoding="utf-8"))
-            self.assertEqual(final_package["problem_profile"]["research_object"], "小猫")
-            self.assertIn("simulation_blueprint", final_package)
-            self.assertIn("renderer_payload", final_package)
-            self.assertIn("delivery_bundle", final_package)
+            self.assertEqual(final_package["structured_task_model"]["research_object"], "小猫")
+            self.assertIn("run_profiling", final_package)
+            self.assertIn("final_validation", final_package)
+            self.assertIn("compile_delivery", final_package)
+            self.assertNotIn("planner", final_package)
+            self.assertNotIn("problem_profile", final_package)
             self.assertTrue((run_dir / "status.json").exists())
 
     def test_run_builds_staged_force_scene_for_generic_contact_transition_problem(self) -> None:
@@ -119,47 +134,38 @@ class HarnessOrchestratorTests(unittest.TestCase):
                 runs_root=Path(temp_dir),
             )
 
-            self.assertEqual(result["planner"]["stage_type"], "contact-impact")
-            self.assertEqual(result["scene_spec"]["template_id"], "force-analysis-staged-v1")
-            parameters = result["scene_spec"]["parameters"]
-            stage_options = parameters["stage_options"]
-            self.assertEqual(len(stage_options), 2)
-            self.assertEqual(stage_options[0]["label"], "飞行阶段")
-            self.assertEqual(stage_options[1]["label"], "接触阶段")
+            scene_spec = result["simulation_spec_generation"]["scene_spec"]
+            self.assertTrue(scene_spec["template_id"].startswith("physics-"))
+            self.assertGreaterEqual(len(scene_spec["controls"]), 1)
 
-    def test_plan_routes_projectile_problem_to_projectile_motion_family(self) -> None:
+    def test_plan_does_not_emit_legacy_projectile_family_route(self) -> None:
         result = plan_problem_to_simulation(
             ProblemInput(text=PROJECTILE_PROBLEM, topic_hint="high-school-physics")
         )
 
-        self.assertEqual(result["planner"]["problem_family"], "projectile-motion")
-        self.assertEqual(result["planner"]["model_family"], "projectile-motion")
-        self.assertEqual(result["planner"]["simulation_mode"], "trajectory-lab")
+        self.assertNotIn("problem_family", result["run_profiling"])
+        self.assertEqual(result["run_profiling"]["input_profile"], "problem_only")
 
-    def test_plan_routes_elastic_problem_to_symmetric_elastic_motion_family(self) -> None:
+    def test_plan_does_not_emit_legacy_elastic_family_route(self) -> None:
         result = plan_problem_to_simulation(
             ProblemInput(text=ELASTIC_PROBLEM, topic_hint="high-school-physics")
         )
 
-        self.assertEqual(result["planner"]["problem_family"], "elastic-motion")
-        self.assertEqual(result["planner"]["model_family"], "symmetric-elastic-motion")
-        self.assertEqual(result["planner"]["simulation_mode"], "restoring-force-lab")
+        self.assertNotIn("problem_family", result["run_profiling"])
+        self.assertEqual(result["run_profiling"]["input_profile"], "problem_only")
 
-    def test_run_builds_elastic_motion_package(self) -> None:
+    def test_run_builds_generic_stage_package_without_legacy_aliases(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             result = run_problem_to_simulation_harness(
                 ProblemInput(text=ELASTIC_PROBLEM, topic_hint="high-school-physics"),
                 runs_root=Path(temp_dir),
             )
 
-            self.assertEqual(result["planner"]["model_family"], "symmetric-elastic-motion")
-            self.assertEqual(result["problem_profile"]["research_object"], "物块")
-            self.assertEqual(result["scene_spec"]["template_id"], "elastic-restoring-motion-v1")
-            self.assertEqual(result["simulation_spec"]["renderer_mode"], "parameterized-motion-preview")
-            self.assertEqual(result["simulation_blueprint"]["delivery_mode"], "interactive-teaching-demo")
-            self.assertEqual(result["renderer_payload"]["component_key"], "elastic-restoring-motion")
-            self.assertEqual(result["delivery_bundle"]["primary_view"], "simulation-viewport")
-            self.assertEqual(result["validation_report"]["route"], "simulation")
+            self.assertEqual(result["structured_task_model"]["research_object"], "物块")
+            self.assertIn("scene_spec", result["simulation_spec_generation"])
+            self.assertIn("simulation_spec", result["simulation_spec_generation"])
+            self.assertEqual(result["compile_delivery"]["delivery_bundle"]["primary_view"], "simulation-viewport")
+            self.assertTrue(result["final_validation"]["ready_for_generation"])
 
     def test_task_plan_includes_post_package_simulation_tasks(self) -> None:
         result = plan_problem_to_simulation(
@@ -167,9 +173,9 @@ class HarnessOrchestratorTests(unittest.TestCase):
         )
 
         task_types = [task["type"] for task in result["task_plan"]["tasks"]]
-        self.assertIn("simulation_blueprint", task_types)
-        self.assertIn("renderer_payload", task_types)
-        self.assertIn("delivery_bundle", task_types)
+        self.assertIn("simulation_spec_generation", task_types)
+        self.assertIn("final_validation", task_types)
+        self.assertIn("compile_delivery", task_types)
 
     def test_elastic_package_meets_simulation_lab_quality_bar(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -178,34 +184,28 @@ class HarnessOrchestratorTests(unittest.TestCase):
                 runs_root=Path(temp_dir),
             )
 
-            blueprint = result["simulation_blueprint"]
-            delivery_bundle = result["delivery_bundle"]
-            renderer_payload = result["renderer_payload"]
+            blueprint = result["compile_delivery"]["simulation_blueprint"]
+            delivery_bundle = result["compile_delivery"]["delivery_bundle"]
+            renderer_payload = result["compile_delivery"]["renderer_payload"]
 
             self.assertEqual(blueprint["delivery_mode"], "interactive-teaching-demo")
             self.assertTrue(blueprint["minimum_quality_bar"]["interactive_controls"])
-            self.assertTrue(blueprint["minimum_quality_bar"]["time_playback"])
-            self.assertTrue(blueprint["minimum_quality_bar"]["linked_charts"])
             self.assertTrue(blueprint["minimum_quality_bar"]["teacher_guidance"])
-            self.assertTrue(blueprint["minimum_quality_bar"]["option_diagnosis"])
-            self.assertIn("linked charts", blueprint["render_priority"])
-            self.assertIn("playback and seek controls", blueprint["render_priority"])
+            self.assertTrue(blueprint["minimum_quality_bar"]["evidence_panel"])
+            self.assertTrue(blueprint["minimum_quality_bar"]["formula_panel"])
 
-            self.assertEqual(renderer_payload["layout_mode"], "simulation-lab")
+            self.assertEqual(renderer_payload["layout_mode"], "physics-workbench")
 
-            self.assertIn("linked-charts", delivery_bundle["secondary_views"])
-            self.assertIn("playback-panel", delivery_bundle["secondary_views"])
+            self.assertIn("evidence-panel", delivery_bundle["secondary_views"])
+            self.assertIn("formula-panel", delivery_bundle["secondary_views"])
             self.assertIn("teacher-guidance", delivery_bundle["secondary_views"])
-            self.assertIn("option-diagnosis", delivery_bundle["secondary_views"])
-            self.assertIn("parameter-controls", delivery_bundle["secondary_views"])
+            self.assertIn("validation-report", delivery_bundle["secondary_views"])
 
             required_panels = {
                 "simulation_canvas",
-                "linked_charts",
-                "parameter_controls",
-                "playback_panel",
+                "evidence_panel",
+                "formula_panel",
                 "teacher_guidance",
-                "option_diagnosis",
             }
             self.assertTrue(required_panels.issubset(set(delivery_bundle["panel_contract"].keys())))
 
@@ -216,31 +216,44 @@ class HarnessOrchestratorTests(unittest.TestCase):
                 runs_root=Path(temp_dir),
             )
 
-            renderer_payload = result["renderer_payload"]
-            delivery_bundle = result["delivery_bundle"]
+            renderer_payload = result["compile_delivery"]["renderer_payload"]
+            delivery_bundle = result["compile_delivery"]["delivery_bundle"]
 
-            self.assertEqual(renderer_payload["layout_mode"], "simulation-lab")
-            self.assertEqual(renderer_payload["design_system"]["theme_key"], "impeccable-lab")
-            self.assertEqual(renderer_payload["design_system"]["density"], "comfortable")
-            self.assertIn("workspace", renderer_payload["composition"])
-            self.assertIn("simulation", renderer_payload["composition"])
-            self.assertIn("inspector", renderer_payload["composition"])
+            self.assertEqual(renderer_payload["layout_mode"], "physics-workbench")
+            self.assertEqual(renderer_payload["component_key"], "generic-physics-runtime")
+            self.assertIn("scene_spec", renderer_payload)
+            self.assertIn("simulation_spec", renderer_payload)
 
             inspector = delivery_bundle["inspector_contract"]
             self.assertIn("summary", inspector)
             self.assertIn("artifacts", inspector)
             self.assertIn("validation", inspector)
-            self.assertIn("problem_profile", inspector["artifacts"])
+            self.assertIn("knowledge_grounding", inspector["artifacts"])
             self.assertIn("physics_model", inspector["artifacts"])
-            self.assertIn("teaching_plan", inspector["artifacts"])
+            self.assertIn("simulation_spec_generation", inspector["artifacts"])
             self.assertEqual(delivery_bundle["artifact_tabs"][0]["id"], "summary")
             self.assertIn("simulation_canvas", delivery_bundle["default_open_panels"])
             self.assertIn("teacher_guidance", delivery_bundle["default_open_panels"])
             self.assertTrue(delivery_bundle["exportable"])
             self.assertEqual(delivery_bundle["export_mode"], "single-file-html")
-            self.assertIn("renderer_payload", delivery_bundle["export_includes"])
-            self.assertTrue(result["validation_report"]["export_ready"])
-            self.assertIn("generation_trace", result["validation_report"])
+            self.assertIn("compile_delivery", delivery_bundle["export_includes"])
+            self.assertTrue(result["final_validation"]["export_ready"])
+            self.assertIn("stage_validations", result)
+
+    def test_pendulum_problem_is_not_forced_into_legacy_force_analysis_route(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            result = run_problem_to_simulation_harness(
+                ProblemInput(text=PENDULUM_PROBLEM, topic_hint="high-school-physics"),
+                runs_root=Path(temp_dir),
+            )
+
+            self.assertEqual(result["run_profiling"]["input_profile"], "problem_with_solution")
+            self.assertNotIn("planner", result)
+            self.assertIn("单摆", json.dumps(result["knowledge_grounding"], ensure_ascii=False))
+            self.assertIn("单摆", json.dumps(result["physics_model"], ensure_ascii=False))
+            self.assertTrue(
+                result["simulation_spec_generation"]["scene_spec"]["template_id"].startswith("physics-")
+            )
 
 
 class HarnessApiTests(unittest.TestCase):
@@ -276,6 +289,8 @@ class HarnessApiTests(unittest.TestCase):
 
         run_dir = Path(self.temp_dir.name) / payload["run_id"]
         self.assertTrue((run_dir / "status.json").exists())
+        terminal = self._wait_for_terminal_status(payload["run_id"])
+        self.assertIn(terminal["status"], {"completed", "failed"})
 
     def test_list_runs_returns_recent_run_metadata(self) -> None:
         first = self.client.post(
@@ -298,8 +313,9 @@ class HarnessApiTests(unittest.TestCase):
         self.assertEqual(latest["run_id"], second["run_id"])
         self.assertIn("title", latest)
         self.assertEqual(latest["status"], "completed")
-        self.assertEqual(latest["model_family"], "symmetric-elastic-motion")
-        self.assertEqual(latest["simulation_mode"], "restoring-force-lab")
+        self.assertEqual(latest["input_profile"], "problem_only")
+        self.assertEqual(latest["experience_mode"], "hybrid")
+        self.assertGreaterEqual(latest["score"], 90)
         self.assertTrue(latest["export_ready"])
 
     def test_run_status_endpoint_returns_aggregated_progress(self) -> None:
@@ -329,10 +345,10 @@ class HarnessApiTests(unittest.TestCase):
         self.assertEqual(result_response.status_code, 200)
         result_payload = result_response.json()
         self.assertEqual(result_payload["run_id"], create["run_id"])
-        self.assertIn("delivery_bundle", result_payload)
+        self.assertIn("compile_delivery", result_payload)
 
         artifact_response = self.client.get(
-            f"/api/problem-to-simulation/runs/{create['run_id']}/artifacts/problem_profile"
+            f"/api/problem-to-simulation/runs/{create['run_id']}/artifacts/structured_task_model"
         )
         self.assertEqual(artifact_response.status_code, 200)
         self.assertEqual(artifact_response.json()["research_object"], "物块")
@@ -354,7 +370,7 @@ class HarnessApiTests(unittest.TestCase):
         self.assertEqual(html_response.status_code, 200)
         self.assertIn("text/html", html_response.headers["content-type"])
         self.assertIn("Physics Problem to Simulation", html_response.text)
-        self.assertIn("elastic-restoring-motion", html_response.text)
+        self.assertIn("physics-", html_response.text)
 
 
 class ModelExecutorTests(unittest.TestCase):
@@ -477,35 +493,23 @@ class HarnessDebugTraceTests(unittest.TestCase):
                             "message": {
                                 "content": json.dumps(
                                     {
-                                        "summary": "钢球滚下斜面后做平抛并击中可调木板",
-                                        "research_object": "钢球",
-                                        "scenario": "斜面出射后的平抛运动",
-                                        "stages": [
-                                            {
-                                                "id": "stage-1",
-                                                "label": "斜面滚下与出射",
-                                                "description": "钢球从斜面滚下并水平出射",
-                                                "contact_state": "与斜面/桌面接触",
-                                                "key_question": "出射瞬间初速度如何确定？",
-                                            },
-                                            {
-                                                "id": "stage-2",
-                                                "label": "平抛飞行与击板",
-                                                "description": "钢球离台后做平抛并击中木板",
-                                                "contact_state": "空中飞行",
-                                                "key_question": "h 改变时飞行时间和速度方向如何变化？",
-                                            },
-                                        ],
-                                        "topic": "high-school-physics",
-                                        "problem_family": "projectile-motion",
-                                        "model_family": "projectile-motion",
-                                        "stage_type": "projectile-board-impact",
-                                        "simulation_mode": "trajectory-lab",
-                                        "simulation_ready": True,
+                                        "input_profile": "problem_only",
+                                        "run_mode": "generate_from_problem",
+                                        "information_density": "high",
+                                        "experience_mode": "teacher_demo",
+                                        "needs_external_completion": False,
+                                        "needs_solution_generation": True,
+                                        "needs_solution_verification": True,
+                                        "missing_context": [],
+                                        "next_stage_plan": ["02_knowledge_grounding", "03_structured_task_model"],
+                                        "has_explicit_problem": True,
+                                        "has_explicit_solution": False,
+                                        "has_diagram_reference": True,
+                                        "has_existing_simulation": False,
                                     },
                                     ensure_ascii=False,
                                 ),
-                                "reasoning_content": "profile reasoning",
+                                "reasoning_content": "run profiling reasoning",
                             }
                         }
                     ]
@@ -518,30 +522,16 @@ class HarnessDebugTraceTests(unittest.TestCase):
                             "message": {
                                 "content": json.dumps(
                                     {
-                                        "model_type": "projectile_motion",
-                                        "research_object": "钢球",
-                                        "force_cases": [
-                                            {
-                                                "stage_id": "stage-1",
-                                                "forces": ["重力", "支持力"],
-                                            },
-                                            {
-                                                "stage_id": "stage-2",
-                                                "forces": ["重力"],
-                                            },
-                                        ],
-                                        "misconceptions": ["误以为 h 改变不会影响末速度方向"],
-                                        "derived_quantities": {
-                                            "time_of_flight": "sqrt(2h/g)",
-                                            "horizontal_displacement": "x=v0*sqrt(2h/g)",
-                                            "vertical_speed": "vy=sqrt(2gh)",
+                                        "completion_status": "skipped",
+                                        "evidence_bundle": {
+                                            "reference_solution_status": "needs-verification",
+                                            "diagram_parsed": False,
+                                            "assumptions_added": False,
                                         },
-                                        "knowledge_points": ["平抛运动", "运动分解"],
-                                        "option_analysis": {"A": "错误", "B": "正确"},
                                     },
                                     ensure_ascii=False,
                                 ),
-                                "reasoning_content": "model reasoning",
+                                "reasoning_content": "evidence completion reasoning",
                             }
                         }
                     ]
@@ -554,14 +544,15 @@ class HarnessDebugTraceTests(unittest.TestCase):
                             "message": {
                                 "content": json.dumps(
                                     {
-                                        "classroom_use": "选项辨析 + 参数探究",
-                                        "primary_goal": "显化 h、t、x 和末速度方向之间的关系",
-                                        "observation_targets": ["飞行时间变化", "末速度方向变化"],
-                                        "teacher_prompts": ["拖动 h 观察轨迹", "对照公式面板解释变化"],
+                                        "grounding_type": "problem_solution_verified",
+                                        "trustworthy": True,
+                                        "concept_boundaries": ["平抛分解", "离台后仅受重力"],
+                                        "assumptions": ["忽略空气阻力"],
+                                        "solution_basis": ["平抛运动独立分解"],
                                     },
                                     ensure_ascii=False,
                                 ),
-                                "reasoning_content": "teaching reasoning",
+                                "reasoning_content": "grounding reasoning",
                             }
                         }
                     ]
@@ -584,7 +575,7 @@ class HarnessDebugTraceTests(unittest.TestCase):
                     )
 
                 run_dir = Path(temp_dir) / result["run_id"]
-                for worker_name in ("problem_profile", "physics_model", "teaching_plan"):
+                for worker_name in ("run_profiling", "knowledge_grounding", "structured_task_model"):
                     trace_path = run_dir / "artifacts" / f"llm_debug_{worker_name}.json"
                     self.assertTrue(trace_path.exists(), msg=f"missing {trace_path}")
                     trace = json.loads(trace_path.read_text(encoding="utf-8"))

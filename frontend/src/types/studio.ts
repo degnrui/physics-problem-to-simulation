@@ -69,8 +69,8 @@ export interface ConversationSummary {
   title: string;
   status: string;
   updatedAt: string | null;
-  modelFamily: string;
-  simulationMode: string;
+  inputProfile: string;
+  experienceMode: string;
 }
 
 export interface StagePresentation {

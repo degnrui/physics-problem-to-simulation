@@ -1,31 +1,41 @@
 # physics-problem-to-simulation
 
-把高中物理题目逐步转换为结构化物理模型、教学设计工件和高质量可交互 simulation 的独立项目仓库。
+把高中物理题目转换为分阶段 artifact、教学设计工件和可交付 simulation package 的独立项目仓库。
 
-## 当前目标
+## 当前主链路
 
-当前采用 harness 驱动的分阶段工作流，不追求“一句题目直接生成任意仿真代码”。
-当前主链路是：
+当前仓库已经从旧的线性 harness 升级为 stage-based runtime。主链路是：
 
-`problem_request -> planner -> problem_profile -> physics_model -> teaching_plan -> scene_spec -> simulation_spec -> simulation_blueprint -> renderer_payload -> delivery_bundle -> validation_report`
+`problem_request -> run_profiling -> evidence_completion -> knowledge_grounding -> structured_task_model -> instructional_design_brief -> physics_model -> representation_interaction_design -> experience_mode_adaptation -> simulation_spec_generation -> final_validation -> compile_delivery`
+
+最终交付只保留 stage artifacts 和 `compile_delivery`，不再输出旧的 alias 字段。
 
 ## 仓库结构
 
-- `backend/`: API、领域模型、题目到 simulation 的管线
-- `frontend/`: 开发用前端壳，展示输入、阶段日志、simulation 成品和中间工件
-- `shared/`: 请求响应契约、共享 schema
+- `backend/`: FastAPI、stage runtime、artifact store、deterministic compile
+- `frontend/`: 开发用前端壳，展示 run 状态、artifact 和 simulation 成品
+- `shared/`: 请求响应契约和示例 payload
+- `skillpacks/`: repo-local stage skill pack
 - `sample_data/`: 样例题目、模型、场景 JSON
-- `docs/`: 架构、产品边界和实现计划
+- `docs/`: 架构、产品边界、设计与计划文档
+
+## 已实现能力
+
+- stage graph 运行时
+- skill / validator / repair 文件加载
+- stage 级 artifact、validation、task log 和 run status 持久化
+- deterministic compile 输出：
+  - `simulation_blueprint`
+  - `renderer_payload`
+  - `delivery_bundle`
+- 弹力题、平抛题、受力阶段切换题的端到端运行
 
 ## 当前边界
 
-- 当前已支持按 harness 自主路由题型，不再只锁定受力分析
-- 已支持的模型族：
-  - `force-analysis`
-  - `projectile-motion`
-  - `symmetric-elastic-motion`
-- 当前 renderer 是教学演示级，不是严格数值积分引擎
-- LLM 还未真正接入 worker 执行，当前以规则/模板为主
+- `evidence_completion` 还是最小实现，尚未接入外部检索或附件深解析
+- repair 目前以 deterministic patch 为主
+- renderer 仍是教学演示级，不是严格数值积分引擎
+- LLM 可参与 stage 生成，但各 stage 仍保留 deterministic fallback
 
 ## Docker 启动
 
@@ -48,13 +58,13 @@ docker compose up --build
 bash scripts/setup_model_api.sh
 ```
 
-如果你不想先编辑脚本，也可以临时这样执行：
+或临时这样执行：
 
 ```bash
 OPENAI_API_KEY=你的key OPENAI_MODEL=gpt-5-mini bash scripts/setup_model_api.sh
 ```
 
-执行后会生成本地私密文件 `backend/.env.local`。完成后可检查：
+完成后可检查：
 
 ```bash
 curl -sS http://127.0.0.1:8000/api/health
@@ -62,40 +72,31 @@ curl -sS http://127.0.0.1:8000/api/health
 
 如果配置成功，返回里会看到 `llm_enabled: true`。
 
-## Simulation 质量条
+## 快速验证
 
-当前 harness 把成品 simulation 的最低质量条写入 `simulation_blueprint` 和 `delivery_bundle`。目标不是“能动起来”，而是至少达到实验室式教学页面：
+可以直接提交一道题创建 run：
 
-- 主仿真画布
-- 联动图表
-- 播放 / 暂停 / 回放 / 进度控制
-- 参数控制面板
-- 教师引导区
-- 选项辨析区
+```bash
+curl -sS http://127.0.0.1:8000/api/problem-to-simulation/runs \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "text": "如图所示，两根相同的橡皮绳，一端连接质量为m的物块，另一端固定在水平桌面上的A、B两点。物块处于AB连线的中点C时，橡皮绳为原长。现将物块沿AB中垂线水平拉至桌面上的O点静止释放。已知CO距离为L，物块与桌面间的动摩擦因数为μ，橡皮绳始终处于弹性限度内，不计空气阻力。",
+    "topic_hint": "high-school-physics",
+    "mode": "rule-based"
+  }'
+```
 
-## 后续主线
+再轮询：
 
-1. 通用题目理解与模型抽取
-2. worker 级 schema / prompt contract 固化
-3. template registry 与 renderer registry
-4. 更高保真的仿真内核
-5. LLM worker 接入
+```bash
+curl -sS http://127.0.0.1:8000/api/problem-to-simulation/runs/<run_id>
+```
 
-## 当前可用能力
+完成后读取：
 
-- harness 已返回：
-  - `problem_profile`
-  - `physics_model`
-  - `teaching_plan`
-  - `scene_spec`
-  - `simulation_spec`
-  - `simulation_blueprint`
-  - `renderer_payload`
-  - `delivery_bundle`
-  - `validation_report`
-- 前端已支持橡皮绳回复运动题的实验室式成品 simulation
-- 前端已支持平抛题的第一版 simulation 视图
-- Docker 已可启动前后端开发环境
+```bash
+curl -sS http://127.0.0.1:8000/api/problem-to-simulation/runs/<run_id>/result
+```
 
 ## 当前样题来源
 
